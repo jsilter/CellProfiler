@@ -449,13 +449,13 @@ try:
                 groups = dict(kvs)
             else:
                 groups = None
-
             use_hdf5 = len(args) > 0 and not args[0].lower().endswith(".mat")
-
+            
             if(options.multi_processing):
                 import cellprofiler.multiprocess_server as multiprocess_server
                 output_file = os.path.join(cpprefs.get_default_output_directory(),
                             cpprefs.get_output_file_name())
+                start_time = time.time()
                 measurements = multiprocess_server.run_multi(pipeline,image_set_start = image_set_start,
                                                        image_set_end = image_set_end,
                                                        grouping = groups,
@@ -463,12 +463,13 @@ try:
                                                        measurements_filename = None if not use_hdf5 else args[0],
                                                        initial_measurements = measurements)
             else:
-                measurements = pipeline.run(image_set_start=image_set_start, 
+                start_time = time.time()
+                measurements = pipeline.run(image_set_start=image_set_start,
                                             image_set_end=image_set_end,
                                             grouping=groups,
                                             measurements_filename = None if not use_hdf5 else args[0],
                                             initial_measurements = measurements)
-                
+
             if options.worker_mode_URL is not None:
                 try:
                     assert measurements is not None
