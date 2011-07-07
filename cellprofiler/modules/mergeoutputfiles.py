@@ -300,7 +300,7 @@ class MergeOutputFiles(cpm.CPModule):
                     has_error[0] = True
 
             pipeline.add_listener(callback)
-
+            
             # distributed processing passes a list of functions, not a
             # list of filenames.
             pipeline.load(sources[0]() if callable(sources[0]) else sources[0])
