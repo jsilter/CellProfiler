@@ -66,10 +66,10 @@ def run_multiple_workers(url,num_workers = None):
 
     for url in urls:
         pool.apply_async(worker_looper,args=(url,jobs,lock))
-        
+            
     #Note: The results will not be available immediately
     #becaus we haven't joined the pool
-    donejobs = sorted(jobs)
+    donejobs = jobs
 
     return donejobs
     
@@ -169,5 +169,7 @@ def run_multi(pipeline,output_file,image_set_start = 1,image_set_end = None,grou
     os.remove(pipeline_path)
 
  
+=======
+>>>>>>> Removed unused code, removed ability to run multiprocess locally headless
 if __name__ == '__main__':
     pass

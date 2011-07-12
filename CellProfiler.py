@@ -450,7 +450,7 @@ try:
                         time.sleep(20 + random.randint(1, 10)) # avoid hammering server
                         continue
                 else:
-                    print 'Running multiple workers in distributed workflow'
+                    #Running multiple workers in distributed mode
                     continue_looping = False
                     import cellprofiler.multiprocess_server as multiprocess_server
                     donejobs = multiprocess_server.run_multiple_workers(options.worker_mode_URL)
@@ -461,9 +461,8 @@ try:
                 groups = dict(kvs)
             else:
                 groups = None
-            use_hdf5 = len(args) > 0 and not args[0].lower().endswith(".mat")
             
-            import time
+            use_hdf5 = len(args) > 0 and not args[0].lower().endswith(".mat")
             if(options.worker_mode_URL is None and options.run_multiprocess):
                 import cellprofiler.multiprocess_server as multiprocess_server
                 output_file = os.path.join(cpprefs.get_default_output_directory(),
