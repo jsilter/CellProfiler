@@ -13,7 +13,6 @@ Website: http://www.cellprofiler.org
 '''
 
 __version__="$Revision$"
-
 import base64
 import numpy as np
 np.random.seed(9804)
@@ -26,6 +25,12 @@ import traceback
 import unittest
 import uuid
 import zlib
+import socket
+
+if hasattr(unittest, "SkipTest"):
+    SkipTestException = unittest.SkipTest
+else:
+    SkipTestException = None
 
 from cellprofiler.preferences import set_headless
 set_headless()
@@ -49,7 +54,7 @@ STRING_IMG_FEATURE = 'string_imagemeasurement'
 LONG_IMG_FEATURE = 'image_measurement_with_a_column_name_that_exceeds_64_characters_in_width'
 LONG_OBJ_FEATURE = 'obj_measurement_with_a_column_name_that_exceeds_64_characters_in_width'
 WIERD_IMG_FEATURE = 'image_measurement_with_"!@%*\n~!\t\ra\+=''and other &*^% in it..........'
-WIERD_OBJ_FEATURE = 'measurement w/"!@%*\n~!\t\ra\+=''and other &*^% in it'
+WIERD_OBJ_FEATURE = 'measurement w"!@%*\n~!\t\ra\+=''and other &*^% in it'
 GROUP_IMG_FEATURE = "group_imagemeasurement"
 GROUP_OBJ_FEATURE = "group_objmeasurement"
 
@@ -81,13 +86,20 @@ class TestExportToDatabase(unittest.TestCase):
     def setUp(self):
         self.__cursor = None
         self.__connection = None
+        try:
+            x = socket.gethostbyaddr('imgdb02.broadinstitute.org')
+            self.__at_broad = True
+        except:
+            self.__at_broad = False
     
     @property
     def connection(self):
+        if not self.__at_broad:
+            self.skipTest("Skipping actual DB work, not at the Broad.")
         if self.__connection is None:
             import MySQLdb
             from MySQLdb.cursors import SSCursor
-            self.__connection = MySQLdb.connect(host='imgdb02',
+            self.__connection = MySQLdb.connect(host='imgdb02.broadinstitute.org',
                                                 user='cpuser',
                                                 passwd='cPus3r',
                                                 local_infile=1)
@@ -95,6 +107,8 @@ class TestExportToDatabase(unittest.TestCase):
     
     @property
     def cursor(self):
+        if not self.__at_broad:
+            self.skipTest("Skipping actual DB work, not at the Broad.")
         if self.__cursor is None:
             import MySQLdb
             from MySQLdb.cursors import SSCursor
@@ -850,6 +864,7 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
             if (column[1].startswith("ModuleError_") or
                 column[1].startswith("ExecutionTime_")):
                 m.add_image_measurement(column[1],0)
+        m.next_image_set(image_set_count)
         if wants_files or well_metadata:
             output_dir = tempfile.mkdtemp()
             module.directory.dir_choice = E.ABSOLUTE_FOLDER_NAME
@@ -894,7 +909,9 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
             try:
                 self.cursor.execute("drop table %s.%s" %
                                     (module.db_name.value, table_name))
-            except:
+            except SkipTestException:
+                raise
+            except Exception:
                 traceback.print_exc()
                 print "Failed to drop table %s"%table_name
             
@@ -1103,6 +1120,8 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
             module.wants_agg_std_dev.value = False
             module.objects_choice.value = E.O_ALL
             module.separate_object_tables.value = E.OT_COMBINE
+            if not self.__at_broad:
+                self.skipTest("Skipping actual DB work, not at the Broad.")
             module.prepare_run(workspace.pipeline, workspace.image_set_list,None)
             module.prepare_group(workspace.pipeline, workspace.image_set_list,
                                  {}, [1])
@@ -1279,10 +1298,11 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
         # object measurements
         #
         m = workspace.measurements
-        fim = m.get_all_measurements(cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT)
-        fim[0] = np.NaN
-        om = m.get_all_measurements(OBJECT_NAME, OBJ_MEASUREMENT)
-        om[0][0] = np.NaN
+        m.add_measurement(
+            cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT, np.NaN, True, 1)
+        om = m.get_measurement(OBJECT_NAME, OBJ_MEASUREMENT, 1)
+        om[0] = np.NaN
+        m.add_measurement(OBJECT_NAME, OBJ_MEASUREMENT, om, True, 1)
         try:
             self.assertTrue(isinstance(module, E.ExportToDatabase))
             module.db_type = E.DB_MYSQL_CSV
@@ -1327,7 +1347,7 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
             self.assertTrue(row[2] is None)
             self.assertEqual(row[3], STRING_VALUE)
             self.assertEqual(row[4], len(OBJ_VALUE))
-            self.assertAlmostEqual(row[5], np.mean(om[0][~np.isnan(om[0])]))
+            self.assertAlmostEqual(row[5], np.mean(om[~np.isnan(om)]))
             self.assertRaises(StopIteration, self.cursor.next)
             statement = ("select ImageNumber, ObjectNumber, %s_%s "
                          "from %sPer_Object order by ObjectNumber"%
@@ -1356,10 +1376,11 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
         # object measurements
         #
         m = workspace.measurements
-        fim = m.get_all_measurements(cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT)
-        fim[0] = np.inf
-        om = m.get_all_measurements(OBJECT_NAME, OBJ_MEASUREMENT)
-        om[0][0] = np.inf
+        m.add_measurement(
+            cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT, np.inf, True, 1)
+        om = m.get_measurement(OBJECT_NAME, OBJ_MEASUREMENT, 1)
+        om[0] = np.inf
+        m.add_measurement(OBJECT_NAME, OBJ_MEASUREMENT, om, True, 1)
         try:
             self.assertTrue(isinstance(module, E.ExportToDatabase))
             module.db_type = E.DB_MYSQL_CSV
@@ -1404,8 +1425,8 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
             self.assertTrue(row[2] is None)
             self.assertEqual(row[3], STRING_VALUE)
             self.assertEqual(row[4], len(OBJ_VALUE))
-            mask = ~(np.isnan(om[0]) | np.isinf(om[0]))
-            self.assertAlmostEqual(row[5], np.mean(om[0][mask]))
+            mask = ~(np.isnan(om) | np.isinf(om))
+            self.assertAlmostEqual(row[5], np.mean(om[mask]))
             self.assertRaises(StopIteration, self.cursor.next)
             statement = ("select ImageNumber, ObjectNumber, %s_%s "
                          "from %sPer_Object order by ObjectNumber"%
@@ -1434,10 +1455,11 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
         # object measurements
         #
         m = workspace.measurements
-        fim = m.get_all_measurements(cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT)
-        fim[0] = np.NaN
-        om = m.get_all_measurements(OBJECT_NAME, OBJ_MEASUREMENT)
-        om[0][:] = np.NaN
+        m.add_measurement(
+            cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT, np.NaN, True, 1)
+        om = m.get_measurement(OBJECT_NAME, OBJ_MEASUREMENT, 1)
+        om[0] = np.NaN
+        m.add_measurement(OBJECT_NAME, OBJ_MEASUREMENT, om, True, 1)
         try:
             self.assertTrue(isinstance(module, E.ExportToDatabase))
             module.db_type = E.DB_MYSQL
@@ -1469,7 +1491,7 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
             self.assertTrue(row[2] is None)
             self.assertEqual(row[3], STRING_VALUE)
             self.assertEqual(row[4], len(OBJ_VALUE))
-            self.assertTrue(row[5] is None)
+            self.assertAlmostEqual(row[5], np.mean(om[np.isfinite(om)]))
             self.assertRaises(StopIteration, self.cursor.next)
             statement = ("select ImageNumber, ObjectNumber, %s_%s "
                          "from %sPer_Object order by ObjectNumber"%
@@ -1480,7 +1502,7 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
                 self.assertEqual(len(row), 3)
                 self.assertEqual(row[0], 1)
                 self.assertEqual(row[1], i+1)
-                self.assertTrue(row[2] is None)
+                self.assertTrue(row[2] is None or i != 0)
             self.assertRaises(StopIteration, self.cursor.next)
         finally:
             self.drop_tables(module, ("Per_Image","Per_Object"))
@@ -2166,10 +2188,11 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
         # object measurements
         #
         m = workspace.measurements
-        fim = m.get_all_measurements(cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT)
-        fim[0] = np.NaN
-        om = m.get_all_measurements(OBJECT_NAME, OBJ_MEASUREMENT)
-        om[0][0] = np.NaN
+        m.add_measurement(
+            cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT, np.NaN, True, 1)
+        om = m.get_measurement(OBJECT_NAME, OBJ_MEASUREMENT, 1)
+        om[0] = np.NaN
+        m.add_measurement(OBJECT_NAME, OBJ_MEASUREMENT, om, True, 1)
         try:
             self.assertTrue(isinstance(module, E.ExportToDatabase))
             module.db_type = E.DB_MYSQL_CSV
@@ -2214,7 +2237,7 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
             self.assertTrue(row[2] is None)
             self.assertEqual(row[3], STRING_VALUE)
             self.assertEqual(row[4], len(OBJ_VALUE))
-            self.assertAlmostEqual(row[5], np.mean(om[0][~np.isnan(om[0])]))
+            self.assertAlmostEqual(row[5], np.mean(om[~np.isnan(om)]))
             self.assertRaises(StopIteration, self.cursor.next)
             statement = self.per_object_statement(module, OBJECT_NAME, 
                                                   [OBJ_MEASUREMENT])
@@ -2242,10 +2265,11 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
         # object measurements
         #
         m = workspace.measurements
-        fim = m.get_all_measurements(cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT)
-        fim[0] = np.NaN
-        om = m.get_all_measurements(OBJECT_NAME, OBJ_MEASUREMENT)
-        om[0][:] = np.NaN
+        m.add_measurement(
+            cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT, np.NaN, True, 1)
+        om = m.get_measurement(OBJECT_NAME, OBJ_MEASUREMENT, 1)
+        om[:] = np.NaN
+        m.add_measurement(OBJECT_NAME, OBJ_MEASUREMENT, om, True, 1)
         try:
             self.assertTrue(isinstance(module, E.ExportToDatabase))
             module.db_type = E.DB_MYSQL
@@ -2300,10 +2324,11 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
         # object measurements
         #
         m = workspace.measurements
-        fim = m.get_all_measurements(cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT)
-        fim[0] = np.inf
-        om = m.get_all_measurements(OBJECT_NAME, OBJ_MEASUREMENT)
-        om[0][:] = np.inf
+        m.add_measurement(
+            cpmeas.IMAGE, FLOAT_IMG_MEASUREMENT, np.NaN, True, 1)
+        om = m.get_measurement(OBJECT_NAME, OBJ_MEASUREMENT, 1)
+        om[:] = np.inf
+        m.add_measurement(OBJECT_NAME, OBJ_MEASUREMENT, om, True, 1)
         try:
             self.assertTrue(isinstance(module, E.ExportToDatabase))
             module.db_type = E.DB_MYSQL
@@ -2772,7 +2797,7 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
             stmt = "select Image_%s from %s" % (expected_thumbnail_column, image_table)
             self.cursor.execute(stmt)
             result = self.cursor.fetchall()
-            im = PILImage.open(StringIO(result[0][0]))
+            im = PILImage.open(StringIO(result[0][0].decode('base64')))
             self.assertEqual(tuple(im.size), (200,200))
             
         finally:
@@ -2808,7 +2833,7 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
             cursor, connection = self.get_sqlite_cursor(module)
             cursor.execute(stmt)
             result = cursor.fetchall()
-            im = PILImage.open(StringIO(result[0][0]))
+            im = PILImage.open(StringIO(str(result[0][0]).decode('base64')))
             self.assertEqual(tuple(im.size), (200,200))
         finally:
             if cursor is not None:
@@ -2840,7 +2865,7 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
                                  {}, np.arange(count)+1)
             for i in range(count):
                 workspace.set_image_set_for_testing_only(i+1)
-                measurements.set_image_set_number(i+1)
+                measurements.next_image_set(i + 1)
                 module.run(workspace)
             self.cursor.execute("use CPUnitTest")
             #
@@ -2927,7 +2952,7 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
                                  {}, np.arange(count)+1)
             for i in range(count):
                 workspace.set_image_set_for_testing_only(i+1)
-                measurements.set_image_set_number(i+1)
+                measurements.next_image_set(i+1)
                 module.run(workspace)
             self.cursor.execute("use CPUnitTest")
             #
@@ -3022,7 +3047,7 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
                                  {}, np.arange(count)+1)
             for i in range(count):
                 workspace.set_image_set_for_testing_only(i+1)
-                measurements.set_image_set_number(i+1)
+                measurements.next_image_set(i+1)
                 module.run(workspace)
             self.cursor.execute("use CPUnitTest")
             #
@@ -3103,7 +3128,7 @@ ExportToDatabase:[module_num:1|svn_version:\'9461\'|variable_revision_number:15|
                                  {}, np.arange(count)+1)
             for i in range(count):
                 workspace.set_image_set_for_testing_only(i+1)
-                measurements.set_image_set_number(i+1)
+                measurements.next_image_set(i+1)
                 module.run(workspace)
             self.cursor.execute("use CPUnitTest")
             #

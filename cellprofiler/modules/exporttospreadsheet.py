@@ -93,7 +93,7 @@ SETTING_AUTOMATIC_FILE_NAME_IDX = 3
 """# of settings within an object group"""
 SETTING_OBJECT_GROUP_CT = 4
 
-"""The caption for the image set index"""
+"""The caption for the image set number"""
 IMAGE_NUMBER = "ImageNumber"
 
 """The caption for the object # within an image set"""
@@ -444,20 +444,23 @@ class ExportToSpreadsheet(cpm.CPModule):
         metadata_groups = workspace.measurements.group_by_metadata(tags)
         for metadata_group in metadata_groups:
             if len(object_names) == 1 and object_names[0] == IMAGE:
-                self.make_image_file(file_name, metadata_group.indexes, 
+                self.make_image_file(file_name, 
+                                     metadata_group.image_numbers, 
                                      workspace)
                 if self.wants_genepattern_file.value:
-                    self.make_gct_file(file_name, metadata_group.indexes, 
-                                         workspace)
+                    self.make_gct_file(file_name, 
+                                       metadata_group.image_numbers, 
+                                       workspace)
             elif len(object_names) == 1 and object_names[0] == OBJECT_RELATIONSHIPS:
-                self.make_relationships_file(file_name, metadata_group.indexes, 
+                self.make_relationships_file(file_name, 
+                                             metadata_group.image_numbers, 
                                              workspace)
             else:
                 self.make_object_file(object_names, file_name, 
-                                      metadata_group.indexes, workspace)
+                                      metadata_group.image_numbers, workspace)
     
     def make_full_filename(self, file_name, 
-                           workspace = None, image_set_index = None):
+                           workspace = None, image_set_number = None):
         """Convert a file name into an absolute path
         
         We do a few things here:
@@ -467,12 +470,12 @@ class ExportToSpreadsheet(cpm.CPModule):
           convention
         * Create any directories along the path
         """
-        if image_set_index is not None and workspace is not None:
+        if image_set_number is not None and workspace is not None:
             file_name = workspace.measurements.apply_metadata(file_name,
-                                                              image_set_index)
+                                                              image_set_number)
         measurements = None if workspace is None else workspace.measurements
         path_name = self.directory.get_absolute_path(measurements, 
-                                                     image_set_index)
+                                                     image_set_number)
         file_name = os.path.join(path_name, file_name)
         path, file = os.path.split(file_name)
         if not os.path.isdir(path):
@@ -503,27 +506,26 @@ class ExportToSpreadsheet(cpm.CPModule):
         finally:
             fd.close()
     
-    def make_image_file(self, file_name, image_set_indexes, workspace):
+    def make_image_file(self, file_name, image_set_numbers, workspace):
         """Make a file containing image measurements
         
         file_name - create a file with this name
-        image_set_indexes - indexes of the image sets whose data gets
-                            extracted
+        image_set_numbers - the image sets whose data gets extracted
         workspace - workspace containing the measurements
         """
         m = workspace.measurements
         image_features = m.get_feature_names(IMAGE)
         image_features.insert(0, IMAGE_NUMBER)
         if not self.check_excel_limits(workspace, file_name,
-                                       len(image_set_indexes),
+                                       len(image_set_numbers),
                                        len(image_features)):
             return
         file_name = self.make_full_filename(file_name, workspace,
-                                            image_set_indexes[0])
+                                            image_set_numbers[0])
         fd = open(file_name,"wb")
         try:
             writer = csv.writer(fd, delimiter=self.delimiter_char)
-            for index in image_set_indexes:
+            for img_number in image_set_numbers:
                 aggs = []
                 if self.wants_aggregate_means:
                     aggs.append(cpmeas.AGG_MEAN)
@@ -531,9 +533,9 @@ class ExportToSpreadsheet(cpm.CPModule):
                     aggs.append(cpmeas.AGG_MEDIAN)
                 if self.wants_aggregate_std:
                     aggs.append(cpmeas.AGG_STD_DEV)
-                agg_measurements = m.compute_aggregate_measurements(index,
+                agg_measurements = m.compute_aggregate_measurements(img_number,
                                                                     aggs)
-                if index == image_set_indexes[0]:
+                if img_number == image_set_numbers[0]:
                     ordered_agg_names = list(agg_measurements.keys())
                     ordered_agg_names.sort()
                     image_features += ordered_agg_names
@@ -543,11 +545,11 @@ class ExportToSpreadsheet(cpm.CPModule):
                     if image_features is None:
                         return
                     writer.writerow(image_features)
-                row = [ index+1
+                row = [ img_number
                        if feature_name == IMAGE_NUMBER
                        else agg_measurements[feature_name]
                        if agg_measurements.has_key(feature_name)
-                       else m.get_measurement(IMAGE, feature_name, index)
+                       else m.get_measurement(IMAGE, feature_name, img_number)
                        for feature_name in image_features]
                 row = ['' if x is None
                        else x if np.isscalar(x) 
@@ -557,13 +559,12 @@ class ExportToSpreadsheet(cpm.CPModule):
         finally:
             fd.close()
 
-    def make_gct_file(self, file_name, image_set_indexes, workspace):
+    def make_gct_file(self, file_name, image_set_numbers, workspace):
         """Make a GenePattern file containing image measurements
         Format specifications located at http://www.broadinstitute.org/cancer/software/genepattern/tutorial/gp_fileformats.html?gct
         
         file_name - create a file with this name
-        image_set_indexes - indexes of the image sets whose data gets
-                            extracted
+        image_set_numbers - the image sets whose data gets extracted
         workspace - workspace containing the measurements
         """
         from loaddata import is_path_name_feature, is_file_name_feature
@@ -593,11 +594,11 @@ class ExportToSpreadsheet(cpm.CPModule):
         image_features = m.get_feature_names(IMAGE)
         image_features.insert(0, IMAGE_NUMBER)
         if not self.check_excel_limits(workspace, file_name,
-                                       len(image_set_indexes),
+                                       len(image_set_numbers),
                                        len(image_features)):
             return
         file_name = self.make_full_filename(file_name, workspace,
-                                            image_set_indexes[0])
+                                            image_set_numbers[0])
         
         # Use image name and append .gct extension
         path, name = os.path.splitext(file_name)
@@ -606,7 +607,7 @@ class ExportToSpreadsheet(cpm.CPModule):
         fd = open(file_name,"wb")
         try:
             writer = csv.writer(fd,delimiter="\t")
-            for index in image_set_indexes:
+            for img_number in image_set_numbers:
                 aggs = []
                 if self.wants_aggregate_means:
                     aggs.append(cpmeas.AGG_MEAN)
@@ -614,9 +615,9 @@ class ExportToSpreadsheet(cpm.CPModule):
                     aggs.append(cpmeas.AGG_MEDIAN)
                 if self.wants_aggregate_std:
                     aggs.append(cpmeas.AGG_STD_DEV)
-                agg_measurements = m.compute_aggregate_measurements(index, aggs)
+                agg_measurements = m.compute_aggregate_measurements(img_number, aggs)
                 
-                if index == image_set_indexes[0]:
+                if img_number == image_set_numbers[0]:
                     ordered_agg_names = list(agg_measurements.keys())
                     ordered_agg_names.sort()
                     image_features += ordered_agg_names
@@ -633,7 +634,7 @@ class ExportToSpreadsheet(cpm.CPModule):
                             num_measures +=1
                     
                     writer.writerow(['#1.2'])
-                    writer.writerow([len(image_set_indexes),num_measures])
+                    writer.writerow([len(image_set_numbers), num_measures])
                     
                     # Keep measurements only
                     measurement_feature_names = [x for x in image_features if not ignore_feature(x)]
@@ -653,7 +654,7 @@ class ExportToSpreadsheet(cpm.CPModule):
                 # Output all measurements
                 row = [ agg_measurements[feature_name]
                        if agg_measurements.has_key(feature_name)
-                       else m.get_measurement(IMAGE, feature_name, index)
+                       else m.get_measurement(IMAGE, feature_name, img_number)
                        for feature_name in image_features]
                 row = ['' if x is None
                        else x if np.isscalar(x) 
@@ -705,14 +706,13 @@ Do you want to save it anyway?""" %
         return features
         
     def make_object_file(self, object_names, file_name, 
-                         image_set_indexes, workspace):
+                         image_set_numbers, workspace):
         """Make a file containing object measurements
         
         object_names - sequence of names of the objects whose measurements
                        will be included
         file_name - create a file with this name
-        image_set_indexes - indexes of the image sets whose data gets
-                            extracted
+        image_set_numbers -  the image sets whose data gets extracted
         workspace - workspace containing the measurements
         """
         m = workspace.measurements
@@ -733,13 +733,13 @@ Do you want to save it anyway?""" %
             ofeatures.sort()
             features += ofeatures
         file_name = self.make_full_filename(file_name, workspace,
-                                            image_set_indexes[0])
+                                            image_set_numbers[0])
         fd = open(file_name,"wb")
         if self.excel_limits:
             row_count = 1
-            for img_index in image_set_indexes:
+            for img_number in image_set_numbers:
                 object_count =\
-                     np.max([m.get_measurement(IMAGE, "Count_%s"%name, img_index)
+                     np.max([m.get_measurement(IMAGE, "Count_%s"%name, img_number)
                              for name in object_names])
                 row_count += int(object_count)
             if not self.check_excel_limits(workspace, file_name,
@@ -754,21 +754,21 @@ Do you want to save it anyway?""" %
             #
             for i in (0,1) if len(object_names) > 1 else (1,):
                 writer.writerow([x[i] for x in features])
-            for img_index in image_set_indexes:
+            for img_number in image_set_numbers:
                 object_count =\
-                     np.max([m.get_measurement(IMAGE, "Count_%s"%name, img_index)
+                     np.max([m.get_measurement(IMAGE, "Count_%s"%name, img_number)
                              for name in object_names])
                 object_count = int(object_count)
-                columns = [np.repeat(img_index+1, object_count)
+                columns = [np.repeat(img_number, object_count)
                            if feature_name == IMAGE_NUMBER
                            else np.arange(1,object_count+1) 
                            if feature_name == OBJECT_NUMBER
                            else np.repeat(m.get_measurement(IMAGE, feature_name,
-                                                            img_index), 
+                                                            img_number), 
                                           object_count)
                            if object_name == IMAGE
                            else m.get_measurement(object_name, feature_name, 
-                                                  img_index)
+                                                  img_number)
                            for object_name, feature_name in features]
                 for obj_index in range(object_count):
                     row = [ column[obj_index] 
@@ -780,21 +780,21 @@ Do you want to save it anyway?""" %
         finally:
             fd.close()
     
-    def make_relationships_file(self, file_name, image_set_indexes, workspace):
+    def make_relationships_file(self, file_name, image_set_numbers, workspace):
         '''Create a CSV file documenting the relationships between objects'''
         
         file_name = self.make_full_filename(file_name, workspace,
-                                            image_set_indexes[0])
+                                            image_set_numbers[0])
         m = workspace.measurements
         assert isinstance(m, cpmeas.Measurements)
         fd = open(file_name, "wb")
         image_number_map = {}
         module_map = {}
         group_numbers = set()
-        for image_index in image_set_indexes:
-            group_number = m.get_measurement(cpmeas.IMAGE, cpp.GROUP_NUMBER, image_index)
-            group_index = m.get_measurement(cpmeas.IMAGE, cpp.GROUP_INDEX, image_index)
-            image_number_map[(group_number, group_index)] = image_index+1
+        for img_number in image_set_numbers:
+            group_number = m.get_measurement(cpmeas.IMAGE, cpp.GROUP_NUMBER, img_number)
+            group_index = m.get_measurement(cpmeas.IMAGE, cpp.GROUP_INDEX, img_number)
+            image_number_map[(group_number, group_index)] = img_number
             group_numbers.add(group_number)
         for module in workspace.pipeline.modules():
             module_map[module.module_num] = module.module_name
