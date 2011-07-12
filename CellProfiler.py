@@ -63,7 +63,7 @@ parser.add_option("-r", "--run",
                   default=False,
                   help="Run the given pipeline on startup")
 parser.add_option("-m","--multi-processing",
-                  dest = "multi_processing",
+                  dest = "run_multiprocess",
                   action = "store_true",
                   default = False,
                   help = "Process in parallel on all cpus in local machine") 
@@ -278,6 +278,10 @@ if distributed_support_enabled and options.run_distributed:
     # force distributed mode
     import cellprofiler.distributed as cpdistributed
     cpdistributed.force_run_distributed = True
+    
+if distributed_support_enabled and options.run_multiprocess:
+    import cellprofiler.multiprocess_server as multiprocess_server
+    multiprocess_server.force_run_multiprocess = True
 
 # set up values for worker, which is basically a looping headless
 # pipeline runner with special methods to fetch pipelines and
@@ -416,34 +420,42 @@ try:
                 # normal behavior
                 pipeline.load(options.pipeline_filename)
             else:
-                # distributed worker
-                continue_looping = True
-                if time.time() - last_success > worker_timeout:
-                    logging.root.info("Worker timed out.  Exiting.")
-                    break
-
-                try:
-                    jobinfo = cpdistributed.fetch_work(options.worker_mode_URL)
-                except:
-                    # no answer from the server, or possibly a timeout
-                    logging.root.info("Failed to fetch work from server.", exc_info=True)
-                    logging.root.info("Retrying...")
-                    time.sleep(20 + random.randint(1, 10)) # avoid hammering server
+                if not options.run_multiprocess:
+                    # distributed worker
+                    continue_looping = True
+                    if time.time() - last_success > worker_timeout:
+                        logging.root.info("Worker timed out.  Exiting.")
+                        break
+    
+                    try:
+                        jobinfo = cpdistributed.fetch_work(options.worker_mode_URL)
+                    except:
+                        # no answer from the server, or possibly a timeout
+                        logging.root.info("Failed to fetch work from server.", exc_info=True)
+                        logging.root.info("Retrying...")
+                        time.sleep(20 + random.randint(1, 10)) # avoid hammering server
+                        continue
+    
+                    if jobinfo.work_done():
+                        time.sleep(20 + random.randint(1, 10)) # avoid hammering server
+                        continue # loop until timeout
+    
+                    try:
+                        pipeline.load(jobinfo.pipeline_stringio())
+                        image_set_start = jobinfo.image_set_start
+                        image_set_end = jobinfo.image_set_end
+                    except:
+                        logging.root.error("Can't parse pipeline for distributed work.", exc_info=True)
+                        logging.root.info("Retrying...")
+                        time.sleep(20 + random.randint(1, 10)) # avoid hammering server
+                        continue
+                else:
+                    print 'Running multiple workers in distributed workflow'
+                    continue_looping = False
+                    import cellprofiler.multiprocess_server as multiprocess_server
+                    donejobs = multiprocess_server.run_multiple_workers(options.worker_mode_URL)
                     continue
-
-                if jobinfo.work_done():
-                    time.sleep(20 + random.randint(1, 10)) # avoid hammering server
-                    continue # loop until timeout
-
-                try:
-                    pipeline.load(jobinfo.pipeline_stringio())
-                    image_set_start = jobinfo.image_set_start
-                    image_set_end = jobinfo.image_set_end
-                except:
-                    logging.root.error("Can't parse pipeline for distributed work.", exc_info=True)
-                    logging.root.info("Retrying...")
-                    time.sleep(20 + random.randint(1, 10)) # avoid hammering server
-                    continue
+                
             if options.groups is not None:
                 kvs = [x.split('=') for x in options.groups.split(',')]
                 groups = dict(kvs)
@@ -451,7 +463,8 @@ try:
                 groups = None
             use_hdf5 = len(args) > 0 and not args[0].lower().endswith(".mat")
             
-            if(options.multi_processing):
+            import time
+            if(options.worker_mode_URL is None and options.run_multiprocess):
                 import cellprofiler.multiprocess_server as multiprocess_server
                 output_file = os.path.join(cpprefs.get_default_output_directory(),
                             cpprefs.get_output_file_name())

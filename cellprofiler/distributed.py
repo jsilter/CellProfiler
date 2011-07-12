@@ -68,7 +68,12 @@ class Distributor(object):
             raise RuntimeError('Could not create image set list for distributed processing.')
 
         # start server, get base URL
-        self.work_server = nuageux.Server('CellProfiler work server', data_callback=self.data_server, validate_result=self.validate_result)
+        self.work_server = nuageux.Server('CellProfiler work server',port= port,data_callback=self.data_server, validate_result=self.validate_result)
+        
+        #XXX Hack
+        server_URL = self.work_server.base_URL()
+        if 'localhost' in server_URL:
+            self.work_server.base_URL = lambda: 'http://%s:%s' % ('localhost',port)
         self.server_URL = self.work_server.base_URL()
 
         # call prepare_to_create_batch to turn files into URLs

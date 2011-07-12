@@ -10,11 +10,17 @@ import tempfile
 import os
 import logging
 
-from cellprofiler.distributed import JobInfo,fetch_work
+from cellprofiler.distributed import JobInfo,fetch_work,have_nuageux
 from cellprofiler.modules.mergeoutputfiles import MergeOutputFiles
 from cellprofiler.pipeline import Pipeline
+import cellprofiler.preferences as cpprefs
 
-def worker_looper(url):
+# whether CP should run multiprocessing (changed by preferences, or by command line)
+force_run_multiprocess = False
+def run_multiprocess():
+    return (force_run_multiprocess or cpprefs.get_run_multiprocess())
+
+def worker_looper(url,job_nums,lock):
     has_work = True
     job_nums = []
     while has_work:
@@ -52,19 +58,20 @@ def run_multiple_workers(url,num_workers = None):
         num_workers = multiprocessing.cpu_count()
         
     pool = multiprocessing.Pool(num_workers)
+
+    manager = multiprocessing.Manager()
+    #donejobs = manager.Queue()
+    jobs = manager.list()
+    lock = manager.Lock()
+
+    for url in urls:
+        pool.apply_async(worker_looper,args=(url,jobs,lock))
         
-    outjobs = []
-    def callback(jobs):
-        outjobs.extend(jobs)
-    #XXX Believe we can't count on the results to be ordered,
-    #but not sure
-    pool.apply_async(worker_looper,url,callback = callback)
-    pool.close()
-    pool.join()
-    
-    return outjobs
+    #Note: The results will not be available immediately
+    #becaus we haven't joined the pool
+    donejobs = sorted(jobs)
 
-
+    return donejobs
     
 def run_multi(pipeline,output_file,image_set_start = 1,image_set_end = None,grouping = None):
     """
