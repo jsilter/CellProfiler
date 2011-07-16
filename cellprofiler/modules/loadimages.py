@@ -1410,9 +1410,12 @@ class LoadImages(cpmodule.CPModule):
         '''LoadImages creates image sets so it is a load module'''
         return True
     
-    def prepare_run(self, pipeline, image_set_list, frame):
+    def prepare_run(self, workspace):
         """Set up all of the image providers inside the image_set_list
         """
+        pipeline = workspace.pipeline
+        image_set_list = workspace.image_set_list
+        frame = workspace.frame
         if pipeline.in_batch_mode():
             # Don't set up if we're going to retrieve the image set list
             # from batch mode
@@ -2023,7 +2026,7 @@ class LoadImages(cpmodule.CPModule):
             image_set_list.legacy_fields['Pathname%s'%(name)]=root
         return True
     
-    def prepare_to_create_batch(self, pipeline, image_set_list, fn_alter_path):
+    def prepare_to_create_batch(self, workspace, fn_alter_path):
         '''Prepare to create a batch file
         
         This function is called when CellProfiler is about to create a
@@ -2039,6 +2042,7 @@ class LoadImages(cpmodule.CPModule):
                         mapping mountpoints. It should be called for every
                         pathname stored in the settings or legacy fields.
         '''
+        image_set_list = workspace.image_set_list
         for i in range(image_set_list.count()):
             image_set = image_set_list.get_image_set(i)
             self.modify_image_set_info(image_set, fn_alter_path)

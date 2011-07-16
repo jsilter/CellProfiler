@@ -55,7 +55,7 @@ class IdentifyObjectsManually(I.Identify):
             doc = """Check this setting to save the outlines around the objects
             as a binary image.""")
         
-        self.outlines_name = cps.ImageNameProvider(
+        self.outlines_name = cps.OutlineNameProvider(
             "Name the outlines", "CellOutlines",
             doc = """<i>(Used only if outlines are to be saved)</i><br>What do you want to call the outlines image? You can refer to
             this image in subsequent modules, such as <b>SaveImages</b>.""")
@@ -72,7 +72,7 @@ class IdentifyObjectsManually(I.Identify):
             result += [ self.outlines_name ]
         return result
     
-    def prepare_to_create_batch(self, pipeline, image_set_list, fn_alter_path):
+    def prepare_to_create_batch(self, workspace, fn_alter_path):
         '''This module cannot be used in a batch context'''
         raise ValueError("The IdentifyObjectsManually module cannot be run in batch mode")
     

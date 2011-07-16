@@ -23,11 +23,13 @@ import cStringIO
 import zlib
 
 import cellprofiler.pipeline as cpp
-import cellprofiler.objects
-import cellprofiler.cpmodule
-import cellprofiler.cpimage
-import cellprofiler.settings
-import cellprofiler.measurements
+import cellprofiler.objects as cpo
+import cellprofiler.cpmodule as cpm
+import cellprofiler.cpimage as cpi
+import cellprofiler.settings as cps
+import cellprofiler.measurements as cpmeas
+import cellprofiler.workspace as cpw
+import cellprofiler.modules
 from cellprofiler.modules.injectimage import InjectImage
 
 def module_directory():
@@ -54,7 +56,9 @@ def exploding_pipeline(test):
     def fn(pipeline,event):
         if isinstance(event, cpp.RunExceptionEvent):
             import traceback
-            test.assertFalse(event.error.message, "".join(traceback.format_tb(event.tb)))
+            test.assertFalse(
+                isinstance(event, cpp.RunExceptionEvent),
+                "\n".join ([event.error.message] + traceback.format_tb(event.tb)))
     x.add_listener(fn)
     return x
          
@@ -62,7 +66,6 @@ class TestPipeline(unittest.TestCase):
     
     def test_00_00_init(self):
         x = cpp.Pipeline()
-        
     def test_01_01_load_mat(self):
         '''Regression test of img-942, load a batch data pipeline with notes'''
         data = ('eJyVd3VQFN7bLwiKSAtIs7T00p1SUgLSXZIqtdTCLogoISUgHYuggkgo3Q1L'
@@ -306,7 +309,7 @@ MeasureObjectIntensity:[module_num:2|svn_version:\'10087\'|variable_revision_num
         x.add_module(module)
         for m in x.run_with_yield(run_in_background = False):
             pass
-        self.assertTrue(isinstance(m, cellprofiler.measurements.Measurements))
+        self.assertTrue(isinstance(m, cpmeas.Measurements))
         self.assertEqual(m.image_set_count, 1)
         del m
         for obj in get_objs():
@@ -395,14 +398,14 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
         module.my_variable.value = "foo"
         x.add_module(module)
         columns = x.get_measurement_columns()
-        self.assertEqual(len(columns), 5)
+        self.assertEqual(len(columns), 6)
         self.assertTrue(any([column[0] == 'Image' and 
                              column[1] == 'Group_Number' and
-                             column[2] == cellprofiler.measurements.COLTYPE_INTEGER
+                             column[2] == cpmeas.COLTYPE_INTEGER
                              for column in columns]))
         self.assertTrue(any([column[0] == 'Image' and 
                              column[1] == 'Group_Index' and
-                             column[2] == cellprofiler.measurements.COLTYPE_INTEGER
+                             column[2] == cpmeas.COLTYPE_INTEGER
                              for column in columns]))
         self.assertTrue(any([column[0] == 'Image' and 
                              column[1] == 'ModuleError_01MyClassForTest0801'
@@ -410,22 +413,25 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
         self.assertTrue(any([column[0] == 'Image' and 
                              column[1] == 'ExecutionTime_01MyClassForTest0801'
                              for column in columns]))
+        self.assertTrue(any([column[0] == cpmeas.EXPERIMENT and
+                             column[1] == cpp.M_PIPELINE
+                             for column in columns]))
 
         self.assertTrue(any([column[1] == "foo" for column in columns]))
         module.my_variable.value = "bar"
         columns = x.get_measurement_columns()
-        self.assertEqual(len(columns), 5)
+        self.assertEqual(len(columns), 6)
         self.assertTrue(any([column[1] == "bar" for column in columns]))
         module = MyClassForTest0801()
         module.module_num = 2
         module.my_variable.value = "foo"
         x.add_module(module)
         columns = x.get_measurement_columns()
-        self.assertEqual(len(columns), 8)
+        self.assertEqual(len(columns), 9)
         self.assertTrue(any([column[1] == "foo" for column in columns]))
         self.assertTrue(any([column[1] == "bar" for column in columns]))
         columns = x.get_measurement_columns(module)
-        self.assertEqual(len(columns), 5)
+        self.assertEqual(len(columns), 6)
         self.assertTrue(any([column[1] == "bar" for column in columns]))
     
     def test_10_01_all_groups(self):
@@ -435,7 +441,8 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
         keys = ('foo','bar')
         groupings = (({'foo':'foo-A','bar':'bar-A'},(1,3)),
                      ({'foo':'foo-B','bar':'bar-B'},(2,4)))
-        def prepare_run(pipeline, image_set_list, frame):
+        def prepare_run(workspace):
+            image_set_list = workspace.image_set_list
             self.assertEqual(expects[0], 'PrepareRun')
             for i in range(4):
                 image_set_list.get_image_set(i)
@@ -446,7 +453,7 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
             self.assertEqual(expects_state, 'PrepareGroup')
             for image_number in image_numbers:
                 i = image_number-1
-                image = cellprofiler.cpimage.Image(np.ones((10,10)) / (i+1))
+                image = cpi.Image(np.ones((10,10)) / (i+1))
                 image_set = image_set_list.get_image_set(i)
                 image_set.add('image', image)
             for key in keys:
@@ -490,8 +497,8 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
             expects[0],expects[1] = ('Done', 0)
             
         def get_measurement_columns(pipeline):
-            return [(cellprofiler.measurements.IMAGE, "mymeasurement", 
-                     cellprofiler.measurements.COLTYPE_INTEGER)]
+            return [(cpmeas.IMAGE, "mymeasurement", 
+                     cpmeas.COLTYPE_INTEGER)]
         
         module = GroupModule()
         module.setup((keys,groupings), prepare_run, prepare_group,
@@ -516,17 +523,17 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
         groupings = (({'foo':'foo-A','bar':'bar-A'},(1,4)),
                      ({'foo':'foo-B','bar':'bar-B'},(2,5)),
                      ({'foo':'foo-C','bar':'bar-C'},(3,6)))
-        def prepare_run(pipeline, image_set_list, frame):
+        def prepare_run(workspace):
             self.assertEqual(expects[0], 'PrepareRun')
             for i in range(6):
-                image_set_list.get_image_set(i)
+                workspace.image_set_list.get_image_set(i)
             expects[0], expects[1] = ('PrepareGroup', 1)
             return True
         def prepare_group(pipeline, image_set_list, grouping,*args):
             expects_state, expects_grouping = expects
             self.assertEqual(expects_state, 'PrepareGroup')
             for i in range(6):
-                image = cellprofiler.cpimage.Image(np.ones((10,10)) / (i+1))
+                image = cpi.Image(np.ones((10,10)) / (i+1))
                 image_set = image_set_list.get_image_set(i)
                 image_set.add('image', image)
             for key in keys:
@@ -562,8 +569,8 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
             self.assertEqual(expects[0], 'PostRun')
             expects[0],expects[1] = ('Done', 0)
         def get_measurement_columns(pipeline):
-            return [(cellprofiler.measurements.IMAGE, "mymeasurement", 
-                     cellprofiler.measurements.COLTYPE_INTEGER)]
+            return [(cpmeas.IMAGE, "mymeasurement", 
+                     cpmeas.COLTYPE_INTEGER)]
         
         module = GroupModule()
         module.setup((keys,groupings), prepare_run, prepare_group,
@@ -635,7 +642,7 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
         module = cellprofiler.modules.instantiate_module("Align")
         module.module_num = 1
         pipeline.add_module(module)
-        measurements = cellprofiler.measurements.Measurements()
+        measurements = cpmeas.Measurements()
         my_measurement = [np.random.uniform(size=np.random.randint(3,25))
                           for i in range(20)]
         my_image_measurement = [np.random.uniform() for i in range(20)]
@@ -650,7 +657,7 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
         fd = cStringIO.StringIO()
         pipeline.save_measurements(fd, measurements)
         fd.seek(0)
-        measurements = cellprofiler.measurements.load_measurements(fd)
+        measurements = cpmeas.load_measurements(fd)
         my_measurement_out = measurements.get_all_measurements("Foo","Bar")
         self.assertEqual(len(my_measurement), len(my_measurement_out))
         for m_in, m_out in zip(my_measurement, my_measurement_out):
@@ -683,7 +690,7 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
         module = cellprofiler.modules.instantiate_module("Align")
         module.module_num = 1
         pipeline.add_module(module)
-        measurements = cellprofiler.measurements.Measurements()
+        measurements = cpmeas.Measurements()
         # m2 and m3 should go into panic mode because they differ by a cap
         m1_name = "dalkzfsrqoiualkjfrqealkjfqroupifaaalfdskquyalkhfaafdsafdsqteqteqtew"
         m2_name = "lkjxKJDSALKJDSAWQOIULKJFASOIUQELKJFAOIUQRLKFDSAOIURQLKFDSAQOIRALFAJ" 
@@ -700,7 +707,7 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
         fd = cStringIO.StringIO()
         pipeline.save_measurements(fd, measurements)
         fd.seek(0)
-        measurements = cellprofiler.measurements.load_measurements(fd)
+        measurements = cpmeas.load_measurements(fd)
         reverse_mapping = cpp.map_feature_names([m1_name, m2_name, m3_name])
         mapping = {}
         for key in reverse_mapping.keys():
@@ -713,6 +720,29 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
             for m_in, m_out in zip(expected, my_measurement_out):
                 self.assertEqual(len(m_in), len(m_out))
                 self.assertTrue(np.all(m_in == m_out))
+                
+    def test_13_04_pipeline_measurement(self):
+        pipeline = cpp.Pipeline()
+        cellprofiler.modules.fill_modules()
+        module = cellprofiler.modules.instantiate_module("Align")
+        module.module_num = 1
+        pipeline.add_module(module)
+        m = cpmeas.Measurements()
+        image_set_list = cpi.ImageSetList()
+        self.assertTrue(pipeline.prepare_run(cpw.Workspace(
+            pipeline, module, None, None, m, image_set_list)))
+        pipeline_text = m.get_experiment_measurement(cpp.M_PIPELINE)
+        pipeline_text = pipeline_text.encode("us-ascii")
+        pipeline = cpp.Pipeline()
+        pipeline.loadtxt(cStringIO.StringIO(pipeline_text))
+        self.assertEqual(len(pipeline.modules()), 1)
+        module_out = pipeline.modules()[0]
+        self.assertTrue(isinstance(module_out, module.__class__))
+        self.assertEqual(len(module_out.settings()), len(module.settings()))
+        for m1setting, m2setting in zip(module.settings(), module_out.settings()):
+            self.assertTrue(isinstance(m1setting, cps.Setting))
+            self.assertTrue(isinstance(m2setting, cps.Setting))
+            self.assertEqual(m1setting.value, m2setting.value)
                 
     def test_14_01_unicode_save(self):
         pipeline = cpp.Pipeline()
@@ -774,9 +804,9 @@ OutputExternal:[module_num:2|svn_version:\'9859\'|variable_revision_number:1|sho
         self.assertEqual(module.notes, result_module.notes)
         self.assertEqual(module.my_variable.value, result_module.my_variable.value)
 
-class MyClassForTest0801(cellprofiler.cpmodule.CPModule):
+class MyClassForTest0801(cpm.CPModule):
     def create_settings(self):
-        self.my_variable = cellprofiler.settings.Text('','')
+        self.my_variable = cps.Text('','')
     def settings(self):
         return [self.my_variable]
     module_name = "MyClassForTest0801"
@@ -786,13 +816,13 @@ class MyClassForTest0801(cellprofiler.cpmodule.CPModule):
         return "cellprofiler.tests.Test_Pipeline.MyClassForTest0801"
     
     def get_measurement_columns(self, pipeline):
-        return [(cellprofiler.measurements.IMAGE,
+        return [(cpmeas.IMAGE,
                  self.my_variable.value,
                  "varchar(255)")]
 
-class MyClassForTest1101(cellprofiler.cpmodule.CPModule):
+class MyClassForTest1101(cpm.CPModule):
     def create_settings(self):
-        self.my_variable = cellprofiler.settings.Text('','')
+        self.my_variable = cps.Text('','')
     def settings(self):
         return [self.my_variable]
     module_name = "MyClassForTest1101"
@@ -801,13 +831,13 @@ class MyClassForTest1101(cellprofiler.cpmodule.CPModule):
     def module_class(self):
         return "cellprofiler.tests.Test_Pipeline.MyClassForTest1101"
 
-    def prepare_run(self, pipeline, image_set_list, *args):
-        image_set = image_set_list.get_image_set(0)
+    def prepare_run(self, workspace, *args):
+        image_set = workspace.image_set_list.get_image_set(0)
         return True
         
     def prepare_group(self, pipeline, image_set_list, *args):
         image_set = image_set_list.get_image_set(0)
-        image = cellprofiler.cpimage.Image(np.zeros((5,5)))
+        image = cpi.Image(np.zeros((5,5)))
         image_set.add("dummy", image)
         return True
     
@@ -815,8 +845,9 @@ class MyClassForTest1101(cellprofiler.cpmodule.CPModule):
         import MySQLdb
         raise MySQLdb.OperationalError("Bogus error")
 
-class GroupModule(cellprofiler.cpmodule.CPModule):
+class GroupModule(cpm.CPModule):
     module_name = "Group"
+    variable_revision_number = 1
     def setup(self, groupings, 
                  prepare_run_callback = None,
                  prepare_group_callback = None,
@@ -831,6 +862,8 @@ class GroupModule(cellprofiler.cpmodule.CPModule):
         self.post_run_callback = post_run_callback
         self.groupings = groupings
         self.get_measurement_columns_callback = get_measurement_columns_callback
+    def settings(self):
+        return []
     def get_groupings(self, image_set_list):
         return self.groupings
     def prepare_run(self, *args):

@@ -38,9 +38,11 @@ import zlib
 
 import cellprofiler.cpimage as cpi
 import cellprofiler.cpmodule as cpm
+import cellprofiler.measurements as cpmeas
 import cellprofiler.pipeline as cpp
 import cellprofiler.settings as cps
 import cellprofiler.preferences as cpprefs
+import cellprofiler.workspace as cpw
 
 '''# of settings aside from the mappings'''
 S_FIXED_COUNT = 7
@@ -49,6 +51,9 @@ S_PER_MAPPING = 2
 
 '''Name of the batch data file'''
 F_BATCH_DATA = 'Batch_data.mat'
+
+'''Name of the .h5 batch data file'''
+F_BATCH_DATA_H5 = 'Batch_data.h5'
 
 class CreateBatchFiles(cpm.CPModule):
     #
@@ -177,15 +182,20 @@ class CreateBatchFiles(cpm.CPModule):
         result += [self.add_mapping_button, self.check_path_button]
         return result
     
-    def prepare_run(self, pipeline, image_set_list, frame):
+    def prepare_run(self, workspace):
         '''Invoke the image_set_list pickling mechanism and save the pipeline'''
+        
+        pipeline = workspace.pipeline
+        image_set_list = workspace.image_set_list
+        frame = workspace.frame
+        
         if pipeline.test_mode:
             return True
         if self.batch_mode.value:
-            self.enter_batch_mode(pipeline, image_set_list)
+            self.enter_batch_mode(workspace)
             return True
         else:
-            self.save_pipeline(pipeline, image_set_list, frame)
+            self.save_pipeline(workspace)
             return False
     
     def run(self, workspace):
@@ -218,7 +228,7 @@ class CreateBatchFiles(cpm.CPModule):
             raise cps.ValidationError("CreateBatchFiles will not produce output in Test Mode",
                                       self.wants_default_output_directory)
         
-    def save_pipeline(self, pipeline, image_set_list, frame=None, outf=None):
+    def save_pipeline(self, workspace, outf=None):
         '''Save the pipeline in Batch_data.mat
         
         Save the pickled image_set_list state in a setting and put this
@@ -227,10 +237,26 @@ class CreateBatchFiles(cpm.CPModule):
         if outf is not None, it is used as a file object destination.
         '''
         from cellprofiler.utilities.get_revision import version
+
+        if self.wants_default_output_directory.value:
+            path = cpprefs.get_default_output_directory()
+        else:
+            path = cpprefs.get_absolute_path(self.custom_output_directory.value)
+        h5_path = os.path.join(path, F_BATCH_DATA_H5)
+        
+        image_set_list = workspace.image_set_list
+        pipeline = workspace.pipeline
+        m = cpmeas.Measurements(copy = workspace.measurements,
+                                filename = h5_path)
         assert isinstance(image_set_list, cpi.ImageSetList)
         assert isinstance(pipeline, cpp.Pipeline)
+        assert isinstance(m, cpmeas.Measurements)
+
         pipeline = pipeline.copy()
-        pipeline.prepare_to_create_batch(image_set_list, self.alter_path)
+        target_workspace = cpw.Workspace(pipeline, None, None, None,
+                                         m, image_set_list,
+                                         workspace.frame)
+        pipeline.prepare_to_create_batch(target_workspace, self.alter_path)
         bizarro_self = pipeline.module(self.module_num)
         assert isinstance(bizarro_self, CreateBatchFiles)
         state = image_set_list.save_state()
@@ -243,21 +269,19 @@ class CreateBatchFiles(cpm.CPModule):
         bizarro_self.default_image_directory.value = \
                     self.alter_path(cpprefs.get_default_image_directory())
         bizarro_self.batch_mode.value = True
+        pipeline.write_pipeline_measurement(m)
+        
 
         if outf is None:
-            if self.wants_default_output_directory.value:
-                path = cpprefs.get_default_output_directory()
-            else:
-                path = cpprefs.get_absolute_path(self.custom_output_directory.value)
-            path = os.path.join(path, F_BATCH_DATA)
-            if os.path.exists(path) and frame is not None:
+            mat_path = os.path.join(path, F_BATCH_DATA)
+            if os.path.exists(mat_path) and workspace.frame is not None:
                 import wx
                 if (wx.MessageBox("%s already exists. Do you want to overwrite it?"%
-                                  path,
+                                  mat_path,
                                   "Overwriting %s" % F_BATCH_DATA,
-                                  wx.YES_NO, frame) == wx.NO):
+                                  wx.YES_NO, workspace.frame) == wx.NO):
                     return
-            pipeline.save(path, format=cpp.FMT_MATLAB) # Matlab... it's like the vestigial hole in the head of CP.
+            pipeline.save(mat_path, format=cpp.FMT_MATLAB) # Matlab... it's like the vestigial hole in the head of CP.
         else:
             pipeline.save(outf, format=cpp.FMT_NATIVE)
 
@@ -266,8 +290,10 @@ class CreateBatchFiles(cpm.CPModule):
         '''Tell the system whether we are in batch mode on the cluster'''
         return self.batch_mode.value
     
-    def enter_batch_mode(self, pipeline, image_set_list):
+    def enter_batch_mode(self, workspace):
         '''Restore the image set list from its setting as we go into batch mode'''
+        image_set_list = workspace.image_set_list
+        pipeline = workspace.pipeline
         assert isinstance(image_set_list, cpi.ImageSetList)
         assert isinstance(pipeline, cpp.Pipeline)
         state = zlib.decompress(self.batch_state.tostring())

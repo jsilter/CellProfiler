@@ -419,8 +419,8 @@ class SaveImages(cpm.CPModule):
         '''Return the runtime dictionary associated with this module'''
         return image_set_list.legacy_fields[self.module_key]
     
-    def prepare_run(self, pipeline, image_set_list, *args):
-        image_set_list.legacy_fields[self.module_key] = {}
+    def prepare_run(self, workspace, *args):
+        workspace.image_set_list.legacy_fields[self.module_key] = {}
         return True
 
     def prepare_group(self, pipeline, image_set_list, 
@@ -432,7 +432,7 @@ class SaveImages(cpm.CPModule):
             d['CURRENT_FRAME'] = 0
         return True
     
-    def prepare_to_create_batch(self, pipeline, image_set_list, fn_alter_path):
+    def prepare_to_create_batch(self, workspace, fn_alter_path):
         self.pathname.alter_for_create_batch_files(fn_alter_path)
         
     def run(self,workspace):
