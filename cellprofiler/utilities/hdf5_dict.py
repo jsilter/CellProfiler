@@ -146,6 +146,12 @@ class HDF5Dict(object):
                     for num_idx, start, stop in hdf5_index:
                         d[num_idx] = slice(start, stop)
 
+    def __check_valid_index(self,idxs):
+        assert isinstance(idxs, tuple), "Accessing HDF5_Dict requires a tuple of (object_name, feature_name, integer)"
+        assert isinstance(idxs[0], basestring) and isinstance(idxs[1], basestring), "First two indices must be of type str."
+        assert isinstance(idxs[2], int) and idxs[2] >= 0, "Third index must be a non-negative integer"
+
+
     def __del__(self):
         if self.is_temporary:
             try:
@@ -158,11 +164,7 @@ class HDF5Dict(object):
             self.hdf5_file.close()
 
     def __getitem__(self, idxs):
-        assert isinstance(idxs, tuple), "Accessing HDF5_Dict requires a tuple of (object_name, feature_name[, integer])"
-        assert isinstance(idxs[0], basestring) and isinstance(idxs[1], basestring), "First two indices must be of type str."
-        assert ((not np.isscalar(idxs[2]) and np.all(idxs[2] >= 0))
-                or (isinstance(idxs[2], int) and idxs[2] >= 0)),\
-               "Third index must be a non-negative integer or integer array"
+        self.__check_valid_index(idxs)
 
         object_name, feature_name, num_idx = idxs
         feature_exists = self.has_feature(object_name, feature_name)
@@ -192,9 +194,7 @@ class HDF5Dict(object):
             return dataset[dest]
 
     def __setitem__(self, idxs, val):
-        assert isinstance(idxs, tuple), "Assigning to HDF5_Dict requires a tuple of (object_name, feature_name, integer)"
-        assert isinstance(idxs[0], basestring) and isinstance(idxs[1], basestring), "First two indices must be of type str."
-        assert isinstance(idxs[2], int) and idxs[2] >= 0, "Third index must be a non-negative integer"
+        self.__check_valid_index(idxs)
 
         object_name, feature_name, num_idx = idxs
         full_name = '%s.%s' % (idxs[0], idxs[1])
@@ -239,9 +239,7 @@ class HDF5Dict(object):
                 dataset[dest] = np.asanyarray(val).ravel()
 
     def __delitem__(self, idxs):
-        assert isinstance(idxs, tuple), "Accessing HDF5_Dict requires a tuple of (object_name, feature_name, integer)"
-        assert isinstance(idxs[0], basestring) and isinstance(idxs[1], basestring), "First two indices must be of type str."
-        assert isinstance(idxs[2], int) and idxs[2] >= 0, "Third index must be a non-negative integer"
+        self.__check_valid_index(idxs)
 
         object_name, feature_name, num_idx = idxs
         feature_exists = self.has_feature(object_name, feature_name)
