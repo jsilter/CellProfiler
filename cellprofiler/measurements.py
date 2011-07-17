@@ -440,7 +440,7 @@ class Measurements(object):
                 self.hdf5_dict[IMAGE, 'ImageNumber', image_set_number] = image_set_number
         
         if object_name == EXPERIMENT or object_name == IMAGE:
-            if not np.isscalar(data) and data is not None:
+            if not np.isscalar(data) and data is not None and len(data) > 0:
                 data = data[0]
             if data is None:
                 data = []
@@ -522,10 +522,18 @@ class Measurements(object):
             if isinstance(v, str):
                 return unicode(str(v)).decode('unicode_escape')
             return v
+        
+        def helper(data):
+            if len(data) > 0:
+                return data[0]
+            else:
+                return np.array([])
+            
         if object_name == EXPERIMENT:
-            return unwrap_string(self.hdf5_dict[EXPERIMENT, feature_name, 0][0])
-        if image_set_number is None:
-            image_set_number = self.image_set_number
+            return unwrap_string(helper(self.hdf5_dict[EXPERIMENT, feature_name, 0]))
+        if object_name == IMAGE:
+            return unwrap_string(helper(self.hdf5_dict[IMAGE, feature_name, image_set_number]))
+        
         vals = self.hdf5_dict[object_name, feature_name, image_set_number]
         if vals is None:
             return None
