@@ -63,7 +63,7 @@ parser.add_option("-r", "--run",
                   default=False,
                   help="Run the given pipeline on startup")
 parser.add_option("-m","--multi-processing",
-                  dest = "multi_processing",
+                  dest = "run_multiprocess",
                   action = "store_true",
                   default = False,
                   help = "Process in parallel on all cpus in local machine") 
@@ -278,6 +278,10 @@ if distributed_support_enabled and options.run_distributed:
     # force distributed mode
     import cellprofiler.distributed as cpdistributed
     cpdistributed.force_run_distributed = True
+    
+if distributed_support_enabled and options.run_multiprocess:
+    import cellprofiler.multiprocess_server as multiprocess_server
+    multiprocess_server.force_run_multiprocess = True
 
 # set up values for worker, which is basically a looping headless
 # pipeline runner with special methods to fetch pipelines and
@@ -409,7 +413,7 @@ try:
                 # normal behavior
                 pipeline.load(options.pipeline_filename)
             else:
-                if not options.multi_processing:
+                if not options.run_multiprocess:
                     # distributed worker
                     continue_looping = True
                     if time.time() - last_success > worker_timeout:
@@ -439,11 +443,10 @@ try:
                         time.sleep(20 + random.randint(1, 10)) # avoid hammering server
                         continue
                 else:
-                    print 'Running multiple workers in distributed workflow'
+                    #Running multiple workers in distributed mode
                     continue_looping = False
                     import cellprofiler.multiprocess_server as multiprocess_server
                     donejobs = multiprocess_server.run_multiple_workers(options.worker_mode_URL)
-                    print 'Finished job numbers: %s' % donejobs
                     continue
             
             if options.groups is not None:
@@ -451,26 +454,11 @@ try:
                 groups = dict(kvs)
             else:
                 groups = None
-            
-            import time
-            if(False):#options.worker_mode_URL is None and options.multi_processing):
-                import cellprofiler.multiprocess_server as multiprocess_server
-                output_file = os.path.join(cpprefs.get_default_output_directory(),
-                        cpprefs.get_output_file_name())
-                start_time = time.time()
-                measurements = multiprocess_server.run_multi(pipeline,image_set_start = image_set_start,
-                                                   image_set_end = image_set_end,
-                                                   grouping = groups,
-                                                   output_file = output_file )
-                end_time = time.time()
-            else:
-                start_time = time.time()
-                measurements = pipeline.run(image_set_start=image_set_start, 
-                                    image_set_end=image_set_end,
-                                    grouping=groups)
-                end_time = time.time()
-            elapsed_time = end_time - start_time
-            print 'Elapsed Time: %s' % (elapsed_time)
+                
+            measurements = pipeline.run(image_set_start=image_set_start, 
+                                image_set_end=image_set_end,
+                                grouping=groups)
+        
             if options.worker_mode_URL is not None:
                 try:
                     assert measurements is not None
