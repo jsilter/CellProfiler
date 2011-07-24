@@ -27,9 +27,9 @@ class TestMultiProcess(unittest.TestCase):
         self.datadir = None
         self.port = None
 
-    def run_multi_tst(self,pipeline,port,output_file_path,status_callback):
+    def run_pipeline_multi(self,pipeline,output_file_path,status_callback):
         distributor = cpdistributed.Distributor(None)
-        distributor.start_serving(pipeline, port,output_file_path, status_callback)
+        distributor.start_serving(pipeline,self.port,output_file_path, status_callback)
         print "serving at ", distributor.server_URL
         #Start workers
         donejobs = multiprocess_server.run_multiple_workers(distributor.server_URL)
@@ -40,26 +40,34 @@ class TestMultiProcess(unittest.TestCase):
             pass
             #tm = time.time()
             #print "%s \t %s" % (tm,ghost)
-                     
-    def test_wound_healing(self):
-        pipeline_path = os.path.join(self.datadir,'ExampleWoundHealingImages/ExampleWoundHealing.cp')
-        ref_data_path = os.path.join(self.datadir,'ExampleWoundHealingImages','ExampleWoundHealing_ref.h5')
+      
+    def tst_pipeline_multi(self,pipeline_path,ref_data_path,output_file_path):
         pipeline= Pipeline()
         pipeline.load(pipeline_path)
-        output_file_path = os.path.join(self.datadir,'output/test_wound_healing.h5')
-        self.run_multi_tst(pipeline,self.port,output_file_path,None)
+        
+        self.run_pipeline_multi(pipeline,output_file_path,None)
         
         ref_meas = measurements.load_measurements(ref_data_path)
         test_meas = measurements.load_measurements(output_file_path)
-        def check_feature(feat_name):
-            fnl = feat_name.lower()
-            ignore = ['executiontime','pathname','filename']
-            for igflag in ignore:
-                if igflag in fnl:
-                    return False
-            return True
+
         compare_measurements(ref_meas, test_meas,check_feature)
         
+    def test_wound_healing(self):
+        pipeline_path = os.path.join(self.datadir,'ExampleWoundHealingImages/ExampleWoundHealing.cp')
+        ref_data_path = os.path.join(self.datadir,'ExampleWoundHealingImages','ExampleWoundHealing_ref.h5')
+
+        output_file_path = os.path.join(self.datadir,'output/test_wound_healing.h5')
+        
+        self.tst_pipeline_multi(pipeline_path,ref_data_path,output_file_path)
+
+def check_feature(feat_name):
+        fnl = feat_name.lower()
+        ignore = ['executiontime','pathname','filename']
+        for igflag in ignore:
+            if igflag in fnl:
+                return False
+        return True  
+              
         
 if __name__ == "__main__":
     #import sys;sys.argv = ['', 'Test.testName']
