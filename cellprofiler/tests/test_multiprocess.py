@@ -10,6 +10,9 @@ import time
 from cellprofiler.pipeline import Pipeline
 import cellprofiler.distributed as cpdistributed
 import cellprofiler.multiprocess_server as multiprocess_server
+import cellprofiler.measurements as measurements
+
+from test_Measurements import compare_measurements
 
 
 class TestMultiProcess(unittest.TestCase):
@@ -40,11 +43,22 @@ class TestMultiProcess(unittest.TestCase):
                      
     def test_wound_healing(self):
         pipeline_path = os.path.join(self.datadir,'ExampleWoundHealingImages/ExampleWoundHealing.cp')
+        ref_data_path = os.path.join(self.datadir,'ExampleWoundHealingImages','ExampleWoundHealing_ref.h5')
         pipeline= Pipeline()
         pipeline.load(pipeline_path)
-        output_file_path = os.path.join(self.datadir,'output/test_wound_healing.hdf5')
+        output_file_path = os.path.join(self.datadir,'output/test_wound_healing.h5')
         self.run_multi_tst(pipeline,self.port,output_file_path,None)
         
+        ref_meas = measurements.load_measurements(ref_data_path)
+        test_meas = measurements.load_measurements(output_file_path)
+        def check_feature(feat_name):
+            fnl = feat_name.lower()
+            ignore = ['executiontime','pathname','filename']
+            for igflag in ignore:
+                if igflag in fnl:
+                    return False
+            return True
+        compare_measurements(ref_meas, test_meas,check_feature)
         
         
 if __name__ == "__main__":

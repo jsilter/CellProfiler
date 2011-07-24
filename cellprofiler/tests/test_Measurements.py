@@ -531,19 +531,31 @@ class TestMeasurements(unittest.TestCase):
         
         #Combine subsets and compare to overall measurements set
         set1.combine_measurements(set2)
-        self.tst_compare_measurements(ideal_comb,set1)
+        compare_measurements(ideal_comb, set1)
+    
+def compare_measurements(ideal_meas,act_meas,check_feature = lambda s: True):
+    """
+    Compare 2 Measurement objects, assert all fields the same. Doesn't check for
+    extra fields in act_meas, but any field in ideal_meas not in act_meas will
+    cause an error.
+    
+    Parameters
+    -----------
+    check_feature : callable, optional
+        should take 1 argument, the feature name. Return true to check between
+        objects, False to ignore. Default checks all. 
+    """
+    obj_names = ideal_meas.get_object_names()
+    for obj_name in obj_names:
+        feature_names = ideal_meas.get_feature_names(obj_name)
+        image_numbers = ideal_meas.get_image_numbers()
         
-    def tst_compare_measurements(self,ideal_meas,act_meas):
-        obj_names = ideal_meas.get_object_names()
-        for obj_name in obj_names:
-            feature_names = ideal_meas.get_feature_names(obj_name)
-            image_numbers = ideal_meas.get_image_numbers()
-            
-            for feat_name in feature_names:
+        for feat_name in feature_names:
+            if(check_feature(feat_name)):
                 for img_num in image_numbers:
                     ideal_dat = ideal_meas.get_measurement(obj_name,feat_name,img_num)
                     act_dat = act_meas.get_measurement(obj_name,feat_name,img_num)
                     np.testing.assert_equal(act_dat,ideal_dat,'Data at %s.%s num %d not equal' % (obj_name,feat_name,img_num),verbose = True)
-                    
+
 if __name__ == "__main__":
     unittest.main()
