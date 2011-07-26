@@ -324,7 +324,7 @@ class DirectoryPath(Text):
         elif self.dir_choice == DEFAULT_OUTPUT_SUBFOLDER_NAME:
             root_directory = get_default_output_directory()
         elif self.dir_choice == ABSOLUTE_FOLDER_NAME:
-            root_directory = os.curdir
+            root_directory = os.curdir #XXX How does this make sense?
         elif self.dir_choice == URL_FOLDER_NAME:
             root_directory = ''
         elif self.dir_choice == NO_FOLDER_NAME:
@@ -344,7 +344,9 @@ class DirectoryPath(Text):
                     custom_path = os.path.split(custom_path)[0]
         else:
             custom_path = self.custom_path
-        if self.dir_choice == URL_FOLDER_NAME:
+        #XXX Something of a hack
+        is_url_path = self.dir_choice == URL_FOLDER_NAME or 'http:' in custom_path
+        if is_url_path:
             return custom_path
         path = os.path.join(root_directory, custom_path)
         return os.path.abspath(path)
@@ -390,7 +392,9 @@ class DirectoryPath(Text):
             # So ugly, the "\" sets us up for the root directory during
             # os.path.join, so we need r".\\" at start to fake everyone out
             custom_path = r".\\" + custom_path
-    
+        
+        
+        #print 'before: dir_choice: %s ; custom path: %s ; selfcustompath: %s' % (self.dir_choice,custom_path,self.custom_path)
         if self.dir_choice == DEFAULT_INPUT_FOLDER_NAME:
             self.dir_choice = ABSOLUTE_FOLDER_NAME
             self.custom_path = fn_alter_path(get_default_image_directory())
@@ -410,6 +414,7 @@ class DirectoryPath(Text):
             self.custom_path = fn_alter_path(
                 os.path.join(get_default_output_directory(), custom_path), 
                 regexp_substitution = regexp_substitution)
+        #print 'after: dir_choice: %s ; custom path: %s ; selfcustompath: %s' % (self.dir_choice,custom_path,self.custom_path)
         
     def test_valid(self, pipeline):
         if self.dir_choice not in self.dir_choices + [NO_FOLDER_NAME]:
