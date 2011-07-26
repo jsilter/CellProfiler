@@ -2060,8 +2060,7 @@ class LoadImages(cpmodule.CPModule):
         or paths in measurements using the function "fn_alter_path" to
         map between file systems.
         
-        pipeline - the pipeline to be saved
-        image_set_list - the image set list to be saved
+        workspace - the workspace to be saved
         fn_alter_path - this is a function that takes a pathname on the local
                         host and returns a pathname on the remote host. It
                         handles issues such as replacing backslashes and
