@@ -106,7 +106,7 @@ class Distributor(object):
         self.pipeline_blob_hash = hashlib.sha1(pipeline_blob).hexdigest()
 
         # special case for URL_map:  -1 is the pipeline blob
-        self.URL_map[-1] = pipeline_path
+        self.URL_map['-1'] = pipeline_path
 
         # add jobs for each image set
         for img_set_index in range(image_set_list.count()):
@@ -167,25 +167,21 @@ class Distributor(object):
     def validate_result(self, result):
         return self.pipeline_blob_hash == result['pipeline_hash'][0]
 
-    def rewrite_to_URL(self, path, **varargs):
-        # For now, each image gets an integer, but for debugging,
-        # perhaps base64-encoding the path would make debugging
-        # easier.
-
-        # empty path entries should be ignored
+    def rewrite_to_URL(self,path,**varargs):
+        """
+        Preserve file names so we can extra metadata
+        from them. Just change file paths to URLS
+        """
+        
         if path == '':
             return ''
 
+        root,finame = os.path.split(path)
+        print finame
         # XXX - need to do something with regexp_substitution
-        if path in self.URL_map:
-            img_index = self.URL_map[path]
-        else:
-            img_index = len(self.URL_map)
-            # two way map for validation.  Using strings and ints prevents collisions
-            self.URL_map[path] = img_index
-            self.URL_map[img_index] = path
-        return "%s/data/%s"%(self.server_URL, str(img_index))
-
+        self.URL_map[finame] = path
+        return "%s/data/%s"%(self.server_URL, finame)
+        
     def stop_serving(self):
         self.work_server.stop()
         if self.pipeline_path:
@@ -195,8 +191,10 @@ class Distributor(object):
     def data_server(self, request):
         try:
             # take just the first element of the request
-            req = int(request[0])
-            # SECURITY: make sure reqd images are in served list
+            #req = int(request[0])
+            
+            req = str(request[0])
+            # SECURITY: make sure req'd images are in served list
             return self.URL_map[req]
         except Exception, e:
             print "bad data request", request, e
