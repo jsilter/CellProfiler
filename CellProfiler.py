@@ -16,6 +16,7 @@ import logging
 import sys
 import os
 import numpy as np
+
 #
 # CellProfiler expects NaN as a result during calculation
 #
@@ -279,7 +280,7 @@ if distributed_support_enabled and options.run_distributed:
     import cellprofiler.distributed as cpdistributed
     cpdistributed.force_run_distributed = True
     
-if distributed_support_enabled and options.run_multiprocess:
+if options.run_multiprocess:
     import cellprofiler.multiprocess_server as multiprocess_server
     multiprocess_server.force_run_multiprocess = True
 
@@ -450,12 +451,17 @@ try:
                         time.sleep(20 + random.randint(1, 10)) # avoid hammering server
                         continue
                 else:
-                    #Running multiple workers in distributed mode
                     continue_looping = False
-                    import cellprofiler.multiprocess_server as multiprocess_server
-                    donejobs = multiprocess_server.run_multiple_workers(options.worker_mode_URL)
+                    if options.worker_mode_URL is None:
+                        #Running headless,multiprocessing here
+                        pipeline.load(options.pipeline_filename)
+                        ### TODO Figure out how to set port right
+                        multiprocess_server.run_pipeline_headless(pipeline,8139,options.output_directory,None)
+                    else:
+                        #Running multiple workers in distributed mode
+                        pool = multiprocess_server.run_multiple_workers(options.worker_mode_URL)
                     continue
-                
+            
             if options.groups is not None:
                 kvs = [x.split('=') for x in options.groups.split(',')]
                 groups = dict(kvs)

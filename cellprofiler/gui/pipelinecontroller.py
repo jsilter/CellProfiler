@@ -725,7 +725,7 @@ class PipelineController:
                              
                 if run_multi:
                     print 'Running multiple workers in distributed workflow'
-                    donejobs = multiprocess_server.run_multiple_workers(self.__distributor.server_URL)
+                    pool = multiprocess_server.run_multiple_workers(self.__distributor.server_URL)
 
             except Exception, e:
                 # Catastrophic failure
