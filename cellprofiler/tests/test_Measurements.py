@@ -533,7 +533,7 @@ class TestMeasurements(unittest.TestCase):
         set1.combine_measurements(set2)
         compare_measurements(ideal_comb, set1)
     
-def compare_measurements(ideal_meas,act_meas,check_feature = lambda s: True):
+def compare_measurements(ideal_meas_input,act_meas_input,check_feature = lambda s: True):
     """
     Compare 2 Measurement objects, assert all fields the same. Doesn't check for
     extra fields in act_meas, but any field in ideal_meas not in act_meas will
@@ -541,10 +541,20 @@ def compare_measurements(ideal_meas,act_meas,check_feature = lambda s: True):
     
     Parameters
     -----------
+    ideal_meas: Measurements, or string path to it
+    act_meas: Measurements, or string path to it
     check_feature : callable, optional
         should take 1 argument, the feature name. Return true to check between
         objects, False to ignore. Default checks all. 
     """
+    
+    ideal_meas = ideal_meas_input
+    act_meas = act_meas_input
+    if(isinstance(ideal_meas,str)):
+        ideal_meas = cpmeas.load_measurements(ideal_meas)
+    if(isinstance(act_meas,str)):
+        act_meas = cpmeas.load_measurements(act_meas)
+    
     obj_names = ideal_meas.get_object_names()
     for obj_name in obj_names:
         feature_names = ideal_meas.get_feature_names(obj_name)
