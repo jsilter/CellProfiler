@@ -324,7 +324,7 @@ class DirectoryPath(Text):
         elif self.dir_choice == DEFAULT_OUTPUT_SUBFOLDER_NAME:
             root_directory = get_default_output_directory()
         elif self.dir_choice == ABSOLUTE_FOLDER_NAME:
-            root_directory = os.curdir #XXX How does this make sense?
+            root_directory = os.curdir #XXX Shouldn't this be '', if path is already absolute?
         elif self.dir_choice == URL_FOLDER_NAME:
             root_directory = ''
         elif self.dir_choice == NO_FOLDER_NAME:
@@ -392,7 +392,6 @@ class DirectoryPath(Text):
             # So ugly, the "\" sets us up for the root directory during
             # os.path.join, so we need r".\\" at start to fake everyone out
             custom_path = r".\\" + custom_path
-        
         
         #print 'before: dir_choice: %s ; custom path: %s ; selfcustompath: %s' % (self.dir_choice,custom_path,self.custom_path)
         if self.dir_choice == DEFAULT_INPUT_FOLDER_NAME:
