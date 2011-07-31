@@ -417,12 +417,13 @@ try:
                     measurements = cpmeas.load_measurements(options.pipeline_filename)
             except:
                 logging.root.info("Failed to load measurements from pipeline")
-            if options.worker_mode_URL is None:
-                # normal behavior
-                pipeline.load(options.pipeline_filename)
-            else:
-                if not options.run_multiprocess:
-                    # distributed worker
+                
+            if not options.run_multiprocess:
+                if options.worker_mode_URL:
+                    # normal behavior,single process
+                    pipeline.load(options.pipeline_filename)
+                else:
+                    # distributed worker, single process
                     continue_looping = True
                     if time.time() - last_success > worker_timeout:
                         logging.root.info("Worker timed out.  Exiting.")
@@ -450,17 +451,16 @@ try:
                         logging.root.info("Retrying...")
                         time.sleep(20 + random.randint(1, 10)) # avoid hammering server
                         continue
+            else:
+                continue_looping = False
+                if options.worker_mode_URL is None:
+                    #Running multiple workers on this computer only
+                    pipeline.load(options.pipeline_filename)
+                    multiprocess_server.run_pipeline_headless(pipeline,8139,options.output_directory,None)
                 else:
-                    continue_looping = False
-                    if options.worker_mode_URL is None:
-                        #Running headless,multiprocessing here
-                        pipeline.load(options.pipeline_filename)
-                        ### TODO Figure out how to set port right
-                        multiprocess_server.run_pipeline_headless(pipeline,8139,options.output_directory,None)
-                    else:
-                        #Running multiple workers in distributed mode
-                        pool = multiprocess_server.run_multiple_workers(options.worker_mode_URL)
-                    continue
+                    #Running multiple workers in distributed mode
+                    pool = multiprocess_server.run_multiple_workers(options.worker_mode_URL)
+                continue
             
             if options.groups is not None:
                 kvs = [x.split('=') for x in options.groups.split(',')]
@@ -469,24 +469,12 @@ try:
                 groups = None
             
             use_hdf5 = len(args) > 0 and not args[0].lower().endswith(".mat")
-            if(options.worker_mode_URL is None and options.run_multiprocess):
-                import cellprofiler.multiprocess_server as multiprocess_server
-                output_file = os.path.join(cpprefs.get_default_output_directory(),
-                            cpprefs.get_output_file_name())
-                start_time = time.time()
-                measurements = multiprocess_server.run_multi(pipeline,image_set_start = image_set_start,
-                                                       image_set_end = image_set_end,
-                                                       grouping = groups,
-                                                       output_file = output_file,
-                                                       measurements_filename = None if not use_hdf5 else args[0],
-                                                       initial_measurements = measurements)
-            else:
-                start_time = time.time()
-                measurements = pipeline.run(image_set_start=image_set_start,
-                                            image_set_end=image_set_end,
-                                            grouping=groups,
-                                            measurements_filename = None if not use_hdf5 else args[0],
-                                            initial_measurements = measurements)
+            #Single process, local operation
+            measurements = pipeline.run(image_set_start=image_set_start,
+                                        image_set_end=image_set_end,
+                                        grouping=groups,
+                                        measurements_filename = None if not use_hdf5 else args[0],
+                                        initial_measurements = measurements)
 
             if options.worker_mode_URL is not None:
                 try:
