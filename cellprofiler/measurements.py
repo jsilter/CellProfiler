@@ -528,12 +528,13 @@ class Measurements(object):
                 return data[0]
             else:
                 return np.array([])
-            
+
         if object_name == EXPERIMENT:
             return unwrap_string(helper(self.hdf5_dict[EXPERIMENT, feature_name, 0]))
-        if object_name == IMAGE:
-            return unwrap_string(helper(self.hdf5_dict[IMAGE, feature_name, image_set_number]))
-        
+                
+        if image_set_number is None:
+            image_set_number = self.image_set_number
+
         vals = self.hdf5_dict[object_name, feature_name, image_set_number]
         if vals is None:
             return None
