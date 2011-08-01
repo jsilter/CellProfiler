@@ -2,7 +2,7 @@ import os
 import os.path
 import sys
 import StringIO
-import zlib
+import zlib,gzip
 import hashlib
 import time
 import tempfile
@@ -20,7 +20,6 @@ except Exception, e:
     have_nuageux = False
 
 from cellprofiler.pipeline import post_module_runner_done_event
-from cellprofiler.modules.mergeoutputfiles import MergeOutputFiles
 import cellprofiler.preferences as cpprefs
 import cellprofiler.cpimage as cpi
 import cellprofiler.workspace as cpw
@@ -92,15 +91,23 @@ class Distributor(object):
         module.batch_mode.set_value(False)
         module.distributed_mode.set_value(True)
 
+        #TODO This is really not ideal
+        #Should integrate gzip in nuageux/twisted/somewhere else
         # save and compress the pipeline
-        pipeline_txt = StringIO.StringIO()
-        module.save_pipeline(workspace, outf=pipeline_txt)
-        pipeline_blob = zlib.compress(pipeline_txt.getvalue())
-        pipeline_fd, pipeline_path = tempfile.mkstemp()
-        self.pipeline_path = pipeline_path
-        os.write(pipeline_fd, pipeline_blob)
-        os.close(pipeline_fd)
+        #This saves the data directly on disk, uncompressed
+        raw_pipeline_path = module.save_pipeline(workspace)
+        #Read it back into memory
+        raw_pipeline_file = open(raw_pipeline_path,'r')
+        pipeline_txt = raw_pipeline_file.read()
+        pipeline_fd,pipeline_path = tempfile.mkstemp()     
+        pipeline_file = open(pipeline_path,'w')
 
+        #pipeline_blob = zlib.compress(pipeline_txt)
+        pipeline_blob = pipeline_txt
+        pipeline_file.write(pipeline_blob)
+        pipeline_file.close()
+        self.pipeline_path = pipeline_path
+        
         # we use the hash to make sure old results don't pollute new
         # ones, and that workers are fetching what they expect.
         self.pipeline_blob_hash = hashlib.sha1(pipeline_blob).hexdigest()
@@ -177,7 +184,6 @@ class Distributor(object):
             return ''
 
         root,finame = os.path.split(path)
-        print finame
         # XXX - need to do something with regexp_substitution
         self.URL_map[finame] = path
         return "%s/data/%s"%(self.server_URL, finame)
@@ -207,7 +213,7 @@ class Distributor(object):
 class JobInfo(object):
     def __init__(self, base_url):
         self.base_url = base_url
-        self._local = self.base_url[0:4] == 'file'
+        self._local = False#self.base_url[0:4] == 'file'
         self.image_set_start = None
         self.image_set_end = None
         self.pipeline_hash = None
@@ -227,7 +233,6 @@ class JobInfo(object):
         self.job_num, image_num, pipeline_hash = work_blob.split(' ')
         self.image_set_start = int(image_num)
         self.image_set_end = int(image_num)
-        print "fetched work:", work_blob
         assert pipeline_hash == self.pipeline_hash, "Mismatched hash, probably out of sync with server"
 
     def work_done(self):
@@ -246,7 +251,8 @@ class JobInfo(object):
         if(self._local):
             return StringIO.StringIO(self.pipeline_blob)
         else:
-            return StringIO.StringIO(zlib.decompress(self.pipeline_blob))
+            return StringIO.StringIO(self.pipeline_blob)
+            #return StringIO.StringIO(zlib.decompress(self.pipeline_blob))
 
     def report_measurements(self, pipeline, measurements):
         meas_file = open(measurements.hdf5_dict.filename,'r+b')
