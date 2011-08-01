@@ -270,6 +270,7 @@ class CreateBatchFiles(cpm.CPModule):
         bizarro_self.batch_mode.value = True
         pipeline.write_pipeline_measurement(m)
         del m
+        return h5_path
 
     def in_batch_mode(self):
         '''Tell the system whether we are in batch mode on the cluster'''
