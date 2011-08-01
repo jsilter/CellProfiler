@@ -99,10 +99,14 @@ def run_multiple_workers(url,num_workers = None):
     #becaus we haven't joined the pool  
     return pool
 
-def run_pipeline_headless(self,pipeline,port,output_file_path,status_callback):
+def _start_serving_headless(pipeline,port,output_file_path,status_callback):
     distributor = Distributor(None)
     distributor.start_serving(pipeline,port,output_file_path, status_callback)
     print "serving at ", distributor.server_URL
+    return distributor
+
+def run_pipeline_headless(pipeline,port,output_file_path,status_callback):
+    distributor = _start_serving_headless(pipeline,port,output_file_path,status_callback)
     #Start workers
     pool = run_multiple_workers(distributor.server_URL)
     

@@ -43,10 +43,12 @@ class TestMultiProcess(unittest.TestCase):
     def test_wound_healing(self):
         pipeline_path = os.path.join(self.datadir,'ExampleWoundHealingImages','ExampleWoundHealing.cp')
         ref_data_path = os.path.join(self.datadir,'ExampleWoundHealingImages','ExampleWoundHealing_ref.h5')
-        output_file_path = os.path.join(self.datadir,'output/test_wound_healing.h5')
+        output_file_path = os.path.join(self.datadir,'output','test_wound_healing.h5')
         
         self.tst_pipeline_multi(pipeline_path,ref_data_path,output_file_path)
         
+    @unittest.skipIf(True,
+                     "Can't handle metadata yet")
     def tst_manual(self):
         ex_path = os.path.join(self.datadir,'ExampleTrackObjects')
         ref_data_path = os.path.join(ex_path,'ExampleTrackObjects_norm_single.h5')
@@ -57,6 +59,21 @@ class TestMultiProcess(unittest.TestCase):
         to_check = [norm_multi_path]#,dist_single_path]
         for path in to_check:
             compare_measurements(ref_data_path,path,check_feature)
+            
+    def test_start_server(self):
+        """
+        Very simple test, just start distributed server to make sure nothing crashes
+        """
+        import time
+        pipeline_path = os.path.join(self.datadir,'ExampleWoundHealingImages','ExampleWoundHealing.cp')
+        output_file_path = os.path.join(self.datadir,'output','test_start_server_temp')
+        pipeline = Pipeline()
+        pipeline.load(pipeline_path)
+        distributor = multiprocess_server._start_serving_headless(pipeline,self.port,output_file_path,None)
+        time.sleep(1.0)
+        
+        distributor.stop_serving()
+        assert True
         
 def check_feature(feat_name):
         fnl = feat_name.lower()
