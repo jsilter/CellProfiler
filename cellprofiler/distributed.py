@@ -102,8 +102,7 @@ class Distributor(object):
         pipeline_fd,pipeline_path = tempfile.mkstemp()     
         pipeline_file = open(pipeline_path,'w')
 
-        #pipeline_blob = zlib.compress(pipeline_txt)
-        pipeline_blob = pipeline_txt
+        pipeline_blob = zlib.compress(pipeline_txt)
         pipeline_file.write(pipeline_blob)
         pipeline_file.close()
         self.pipeline_path = pipeline_path
@@ -251,8 +250,8 @@ class JobInfo(object):
         if(self._local):
             return StringIO.StringIO(self.pipeline_blob)
         else:
-            return StringIO.StringIO(self.pipeline_blob)
-            #return StringIO.StringIO(zlib.decompress(self.pipeline_blob))
+            #return StringIO.StringIO(self.pipeline_blob)
+            return StringIO.StringIO(zlib.decompress(self.pipeline_blob))
 
     def report_measurements(self, pipeline, measurements):
         meas_file = open(measurements.hdf5_dict.filename,'r+b')
