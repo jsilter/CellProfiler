@@ -419,7 +419,7 @@ try:
                 logging.root.info("Failed to load measurements from pipeline")
                 
             if not options.run_multiprocess:
-                if options.worker_mode_URL:
+                if not options.worker_mode_URL:
                     # normal behavior,single process
                     pipeline.load(options.pipeline_filename)
                 else:
