@@ -300,9 +300,7 @@ class MeasureObjectSizeShape(cpm.CPModule):
         centers, eccentricity, major_axis_length, minor_axis_length, \
             theta, compactness =\
             ellipse_from_second_moments_ijv(i, j, 1, l, objects.indices, True)
-        del i
-        del j
-        del l
+        del i,j,l
         self.record_measurement(workspace, object_name,
                                 F_ECCENTRICITY, eccentricity)
         self.record_measurement(workspace, object_name,

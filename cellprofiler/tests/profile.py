@@ -30,7 +30,7 @@ def run_example_fly():
     
 if __name__ == '__main__':
     rerun = False
-    outfilename = os.path.join(basedir,'profile_ExampleFly')
+    outfilename = os.path.join(basedir,'profile_ExampleFly_2')
     
     if(not os.path.exists(outfilename) or rerun):
         cProfile.run('run_example_fly()',outfilename)

@@ -1008,24 +1008,19 @@ class MeasureImageQuality(cpm.CPModule):
                 two_class_otsu = (threshold_group.two_class_otsu.value == O_TWO_CLASS)
                 use_weighted_variance = (threshold_group.use_weighted_variance.value == O_WEIGHTED_VARIANCE)
                 assign_middle_to_foreground = (threshold_group.assign_middle_to_foreground.value == O_FOREGROUND)
+                mask = None
+                if image.has_mask:
+                    mask = image.mask
+                    
                 (local_threshold, global_threshold) = \
-                        (cpthresh.get_threshold(threshold_method,
+                        cpthresh.get_threshold(threshold_method,
                                                 cpthresh.TM_GLOBAL,
                                                 image.pixel_data,
-                                                mask = image.mask,
+                                                mask = mask,
                                                 object_fraction = object_fraction,
                                                 two_class_otsu = two_class_otsu,
                                                 use_weighted_variance = use_weighted_variance,
                                                 assign_middle_to_foreground = assign_middle_to_foreground)
-                         if image.has_mask
-                         else
-                         cpthresh.get_threshold(threshold_method,
-                                                cpthresh.TM_GLOBAL,
-                                                image.pixel_data,
-                                                object_fraction = object_fraction,
-                                                two_class_otsu = two_class_otsu,
-                                                use_weighted_variance = use_weighted_variance,
-                                                assign_middle_to_foreground = assign_middle_to_foreground))
                 
                 scale = threshold_group.threshold_scale
                 if scale is None:
