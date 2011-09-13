@@ -123,14 +123,10 @@ class TestDistributor(unittest.TestCase):
         make sure jobs are served over and over
         """
 
-        self.distributor.prepare_queue()
-        num_jobs = self.distributor.total_jobs
-        del self.distributor
-        self.setUp()
-
         url = self._start_serving()
         self.assertTrue(self.distributor.server_proc.is_alive())
 
+        num_jobs = self.distributor.total_jobs
         num_trials = 100
         fetcher = JobTransit(url, self.context)
 
@@ -149,12 +145,9 @@ class TestDistributor(unittest.TestCase):
         """
         Get jobs and delete them from server (do not report results)
         """
-        self.distributor.prepare_queue()
-        num_jobs = self.distributor.total_jobs
-        del self.distributor
-        self.setUp()
 
         url = self._start_serving()
+        num_jobs = self.distributor.total_jobs
         self.assertTrue(self.distributor.server_proc.is_alive())
         fetcher = JobTransit(url, self.context)
 

@@ -233,9 +233,7 @@ class Distributor(object):
             return reduce(lambda x, y: x and y, which)
         while(not haveall(getkeys, self.init)):
             with lock:
-                for key in getkeys:
-                    if key in self.init:
-                        setattr(self, key, self.init[key])
+                time.sleep(0.01)
 
         if(self.port is None):
             self.port = int(self.url.split(':')[2])
@@ -249,7 +247,7 @@ class Distributor(object):
             #create orphan threads
             self.server_proc.terminate()
 
-        self.work_queue.clear()
+        #self.work_queue.clear()
         if 'file://' in self.pipeline_path:
             path = self.pipeline_path[len('file://')::]
         try:
