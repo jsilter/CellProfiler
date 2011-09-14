@@ -31,13 +31,13 @@ class WorkServer(Process):
     #a get request
     expose = ['num_remaining', 'pipeline_path', 'pipeline_hash']
 
-    def __init__(self, distributor, init, lock):
+    def __init__(self, distributor, init, initialized):
         super(WorkServer, self).__init__()
         self.distributor = distributor
         self.address = distributor.address
         self.port = distributor.port
         self.init = init
-        self.lock = lock
+        self.initialized = initialized
         self.info = {}
 
     def _prepare_queue(self):
@@ -49,11 +49,12 @@ class WorkServer(Process):
             setattr(self, attr, getattr(self.distributor, attr))
 
     def run(self):
-        with self.lock:
-            self._prepare_queue()
-            self.init['url'] = self._prepare_socket()
-            self.init['total_jobs'] = self.num_remaining
-            self.init.update(self.info)
+        #with self.lock:
+        self._prepare_queue()
+        self.init['url'] = self._prepare_socket()
+        self.init['total_jobs'] = self.num_remaining
+        self.init.update(self.info)
+        self.initialized.set()
         #Start listening loop. This is blocking
         self._run()
 
@@ -218,12 +219,14 @@ class Distributor(object):
 
     def start_serving(self):
         manager = Manager()
-        lock = Lock()
+        initialized = manager.Event()
         self.init = manager.dict(self.init)
         #args = (self, data_dict, lock)
         #self.prepare_queue()
-        self.server_proc = WorkServer(self, self.init, lock)
+        self.server_proc = WorkServer(self, self.init, initialized)
         self.server_proc.start()
+        #Wait until parameters have been initialized
+        initialized.wait()
 
         #Can't be sure the child thread will acquire
         #the lock first. Loop until it does.
