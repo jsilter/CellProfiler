@@ -48,12 +48,16 @@ class WorkServer(Process):
         for attr in tocopy:
             setattr(self, attr, getattr(self.distributor, attr))
 
+    def terminate(self):
+        self.init = None
+        super(WorkServer, self).terminate()
+
     def run(self):
         with self.lock:
             self._prepare_queue()
             self.init['url'] = self._prepare_socket()
             self.init['total_jobs'] = self.num_remaining
-            self.init.update(self.info)
+            #self.init.update(self.info)
         #Start listening loop. This is blocking
         self._run()
 
@@ -132,6 +136,8 @@ class WorkServer(Process):
         response['num_remaining'] = self.num_remaining
         return response
 
+    # XXX Would be better to abstract this, would be easy
+    # to have report_result be defined by the constructor
     def report_result(self, msg):
         id = msg['id']
         pipeline_hash = msg['pipeline_hash']
@@ -244,7 +250,9 @@ class Distributor(object):
             return False
         elif(self.is_running()):
             #XXX This is bad, can corrupt resources and 
-            #create orphan threads
+            #create orphan threads. So we remove
+            #shared resources
+            self.init = dict(self.init)
             self.server_proc.terminate()
 
         #self.work_queue.clear()
