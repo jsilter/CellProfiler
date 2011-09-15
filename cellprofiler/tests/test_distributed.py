@@ -8,7 +8,7 @@ import numpy as np
 
 from cellprofiler.modules.tests import example_images_directory
 from cellprofiler.pipeline import Pipeline
-from cellprofiler.distributed import JobTransit, JobInfo, Distributor, Manager
+from cellprofiler.distributed import JobTransit, JobInfo, Manager
 from cellprofiler.distributed import  send_recv, parse_json
 import cellprofiler.preferences as cpprefs
 from cellprofiler.multiprocess import single_job, worker_looper, run_pipeline_headless
@@ -18,7 +18,7 @@ from test_Measurements import compare_measurements
 test_dir = os.path.dirname(os.path.abspath(__file__))
 test_data_dir = os.path.join(test_dir, 'data')
 
-class TestDistributor(unittest.TestCase):
+class TestManager(unittest.TestCase):
     def setUp(self):
         #print 'starting test %s' % self.id()
         self.address = "tcp://127.0.0.1"
@@ -36,8 +36,8 @@ class TestDistributor(unittest.TestCase):
         self.pipeline = Pipeline()
         self.pipeline.load(pipeline_path)
 
-        self.distributor = Distributor(self.pipeline, self.output_file,
-                                       self.address, self.port)
+        #self.distributor = Distributor(self.pipeline, self.output_file,
+                                       #self.address, self.port)
 
         self.manager = Manager(self.pipeline, self.output_file,
                                        self.address, self.port)
@@ -60,7 +60,7 @@ class TestDistributor(unittest.TestCase):
         self.output_file = None
 
         self.pipeline = None
-        self.distributor = None
+        self.manager = None
         #context.term hangs if we haven't closed all the sockets
         self.socket.close()
         self.context.term()
@@ -73,7 +73,9 @@ class TestDistributor(unittest.TestCase):
         #print 'finished test %s' % self.id()
 
     def _start_serving(self, port=None):
-        url = self.distributor.start_serving()
+        self.manager.start()
+        self.manager.initialized.wait()
+        url = self.manager.url
         return url
 
     def _stop_serving_clean(self, url=None):
@@ -89,6 +91,9 @@ class TestDistributor(unittest.TestCase):
         print 'back to main thread'
         time.sleep(1.0)
         self.assertTrue(self.manager.running())
+        url = self.manager.url
+        self._stop_serving_clean(url)
+        self.assertFalse(self.manager.running())
 
 
     def test_start_serving(self):
@@ -99,18 +104,18 @@ class TestDistributor(unittest.TestCase):
 
         time_delay = 0.1
         url = self._start_serving()
-        self.distributor.server_proc.join(time_delay)
+        self.manager.join(time_delay)
         #Server will loop forever unless it hits an error
-        self.assertTrue(self.distributor.server_proc.is_alive())
-        #self._stop_serving_clean(url)
-        self.distributor.stop_serving(force=True)
+        self.assertTrue(self.manager.running())
+        self._stop_serving_clean(url)
+        #self.manager.stop_serving(force=True)
 
     def test_stop_serving(self):
         stop_message = {'type': 'command',
                         'command': 'stop'}
 
         url = self._start_serving()
-        self.assertTrue(self.distributor.server_proc.is_alive())
+        self.assertTrue(self.manager.running())
 
         time_limit = 1
         sent, resp = send_recv(self.context, url, json.dumps(stop_message),
@@ -124,7 +129,7 @@ class TestDistributor(unittest.TestCase):
         #Race condition here. We resolve by waiting awhile,
         #give the server some time to stop
         time.sleep(1)
-        self.assertFalse(self.distributor.server_proc.is_alive())
+        self.assertFalse(self.manager.running())
 
     def test_get_work_01(self):
         """
@@ -134,9 +139,9 @@ class TestDistributor(unittest.TestCase):
         """
 
         url = self._start_serving()
-        self.assertTrue(self.distributor.server_proc.is_alive())
+        self.assertTrue(self.manager.running())
 
-        num_jobs = self.distributor.total_jobs
+        num_jobs = self.manager.total_jobs
         num_trials = 100
         fetcher = JobTransit(url, self.context)
 
@@ -157,10 +162,10 @@ class TestDistributor(unittest.TestCase):
         """
 
         url = self._start_serving()
-        self.assertTrue(self.distributor.server_proc.is_alive())
+        self.assertTrue(self.manager.running())
         fetcher = JobTransit(url, self.context)
 
-        num_jobs = self.distributor.total_jobs
+        num_jobs = self.manager.total_jobs
         self.socket.connect(url)
 
         received = set()
@@ -204,7 +209,7 @@ class TestDistributor(unittest.TestCase):
         self._stop_serving_clean(url)
         for response in responses:
             self.assertEqual(response['status'], 'success')
-        self.assertFalse(self.distributor.server_proc.is_alive())
+        self.assertFalse(self.manager.running())
 
     @np.testing.decorators.slow
     def test_report_measurements(self):
@@ -220,6 +225,7 @@ class TestDistributor(unittest.TestCase):
         self.assertTrue('mismatched pipeline hash' in response['code'])
         self._stop_serving_clean(url)
 
+    @unittest.expectedFailure
     @np.testing.decorators.slow
     @unittest.skip('lengthy test')
     def test_wound_healing(self):
@@ -256,9 +262,9 @@ def check_feature(feat_name):
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(TestDistributor('test_manager_start'))
+    suite.addTest(TestManager('test_wound_healing'))
     return suite
 
 if __name__ == "__main__":
-    #unittest.main()
-    unittest.TextTestRunner(verbosity=2).run(suite())
+    unittest.main()
+    #unittest.TextTestRunner(verbosity=2).run(suite())

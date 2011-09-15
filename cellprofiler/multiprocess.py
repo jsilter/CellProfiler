@@ -4,14 +4,13 @@ on a machine and processing in parallel
 """
 
 import multiprocessing
-from multiprocessing import Process
 import StringIO
 import time
 import logging
 
 import zmq
 
-from distributed import JobTransit, Distributor
+from distributed import JobTransit, Manager
 from cellprofiler.pipeline import Pipeline
 import cellprofiler.preferences as cpprefs
 
@@ -91,16 +90,18 @@ def run_multiple_workers(url, num_workers=None):
     return results
 
 def start_serving_headless(pipeline, output_file_path, address, port=None):
-    distributor = Distributor(pipeline, output_file_path, address, port)
-    url = distributor.start_serving()
-    return distributor
+    manager = Manager(pipeline, output_file_path, address, port)
+    manager.start()
+    manager.initialized.wait()
+    #url = manager.url
+    return manager
 
 def run_pipeline_headless(pipeline, output_file_path,
                             address, port=None):
-    distributor = start_serving_headless(pipeline, output_file_path,
+    manager = start_serving_headless(pipeline, output_file_path,
                                           address, port)
-    num_jobs = distributor.total_jobs
-    results = run_multiple_workers(distributor.url, num_workers=num_jobs)
+    num_jobs = manager.total_jobs
+    results = run_multiple_workers(manager.url, num_workers=num_jobs)
     return results
 
 if __name__ == '__main__':
