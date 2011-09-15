@@ -8,7 +8,7 @@ import numpy as np
 
 from cellprofiler.modules.tests import example_images_directory
 from cellprofiler.pipeline import Pipeline
-from cellprofiler.distributed import JobTransit, JobInfo, Manager
+from cellprofiler.distributed import JobTransit, JobInfo, PipelineManager
 from cellprofiler.distributed import  send_recv, parse_json
 import cellprofiler.preferences as cpprefs
 from cellprofiler.multiprocess import single_job, worker_looper, run_pipeline_headless
@@ -39,7 +39,7 @@ class TestManager(unittest.TestCase):
         #self.distributor = Distributor(self.pipeline, self.output_file,
                                        #self.address, self.port)
 
-        self.manager = Manager(self.pipeline, self.output_file,
+        self.manager = PipelineManager(self.pipeline, self.output_file,
                                        self.address, self.port)
 
         #Might be better to write these paths into the pipeline
@@ -259,6 +259,16 @@ def check_feature(feat_name):
             if igflag in fnl:
                 return False
         return True
+
+def MockManager(BaseManager):
+    def __init__(self, numjobs):
+        self.numjobs = numjobs
+        super(MockManager, self).__init__()
+
+    def prepare_queue(self):
+        for jobnum in range(0, self.numjobs):
+            curj = {'id':jobnum, 'value':-jobnum ** 2}
+            self._work_queue.add(curj)
 
 def suite():
     suite = unittest.TestSuite()

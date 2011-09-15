@@ -7,7 +7,7 @@ import tempfile
 import json
 import urllib2
 import base64
-from multiprocessing import Manager, Process, Lock
+import uuid
 
 import threading
 
@@ -29,24 +29,175 @@ force_run_distributed = False
 def run_distributed():
     return (force_run_distributed or cpprefs.get_run_distributed())
 
-class Manager(threading.Thread):
+class BaseManager(threading.Thread):
 
     #Member variables accessible to anybody who makes
     #a get request
-    expose = ['num_remaining', 'pipeline_path', 'pipeline_hash']
-    def __init__(self, pipeline, output_file, address="tcp://127.0.0.1", port=None):
-        super(Manager, self).__init__()
-        self.init = {}
-        self.pipeline = pipeline
-        self.pipeline_path = None
-        self.output_file = output_file
+    expose = ['num_remaining']
+    def __init__(self, address="tcp://127.0.0.1", port=None, **kwargs):
+        super(BaseManager, self).__init__(**kwargs)
         self.address = address
         self.port = port
         self._work_queue = QueueDict()
         self._loop = ioloop.IOLoop()
         self.initialized = threading.Event()
         self.info = {}
-        self._jobs_finished = 0
+        self.jobs_finished = 0
+
+    def prepare_queue(self):
+        raise NotImplementedError("Must implement prepare_queue")
+
+    def prepare_loop(self, context=None):
+        self._context = context or zmq.Context.instance()
+
+        socket = self._context.socket(zmq.REP)
+        socket.setsockopt(zmq.LINGER, 100)
+        if(self.port is not None):
+            self.url = "%s:%s" % (self.address, int(self.port))
+            socket.bind(self.url)
+        else:
+            self.port = socket.bind_to_random_port(self.address)
+            self.url = "%s:%s" % (self.address, self.port)
+
+        self._socket = socket
+        self._loop.add_handler(self._socket, self.gen_msg_handler, zmq.POLLIN)
+
+        return self.url
+
+    def add_job(self, job, id=None):
+        """
+        Add a job to the work queue
+        """
+        to_add = job
+        if(id is None):
+            id = uuid.uuid4()
+        if('id' not in to_add):
+            to_add['id'] = id
+        self._work_queue.append(to_add)
+
+    def job_finished(self, index=None, id=None):
+        """
+        Remove a job from the work queue
+        At least 1 of id or index must be provided
+        Parameters:
+        id: optional
+            id of the index
+        Returns
+        -----------
+        success: boolean
+            True if removed, False if not
+        """
+        if(index is None):
+            assert id is not None, "id cannot be none if index is None"
+        try:
+            index = self._work_queue.lookup(id)
+        except KeyError:
+            return False
+
+        del self._work_queue[index]
+        self.jobs_finished += 1
+        return True
+
+    def gen_msg_handler(self, socket, event):
+        raw_msg = socket.recv()
+        msg = parse_json(raw_msg)
+
+        response = {'status': 'bad request'}
+        if((msg is None) or ('type' not in msg)):
+            #TODO Log something
+            pass
+        elif(msg['type'] == 'next'):
+            response = self.get_next()
+        elif((msg['type'] == 'result') and ('result' in msg)):
+            response = self.report_result(msg)
+        elif((msg['type']) == 'command'):
+            response = self.receive_command(msg)
+        elif((msg['type']) == 'get'):
+            #General purpose way of querying simple information
+            keys = msg['keys']
+            for key in keys:
+                if(key in self.info):
+                    response[key] = self.info[key]
+                elif(key in self.expose):
+                    response[key] = getattr(self, key, 'notfound')
+                else:
+                    response[key] = 'notfound'
+                response['status'] = 'success'
+
+        self._socket.send(json.dumps(response))
+        if(self.num_remaining == 0):
+            self._loop.stop()
+
+    def run(self):
+        self.prepare_queue()
+        self.prepare_loop()
+        self.initialized.set()
+
+        #Blocking. Starts IO loop
+        self._loop.start()
+
+        self.post_run()
+
+    def running(self):
+        return self._loop.running()
+
+    @property
+    def num_remaining(self):
+        return len(self._work_queue)
+
+    def get_next(self):
+        try:
+            job = self._work_queue.get_next()
+        except IndexError:
+            job = None
+
+        if(job is None):
+            response = {'status': 'nowork'}
+        else:
+            response = job
+        response['num_remaining'] = self.num_remaining
+        return response
+
+    def report_result(self, msg):
+        raise NotImplementedError("Must implement report_result(self,msg)")
+
+    def receive_command(self, msg):
+        """
+        Control commands from client to server.
+
+        For now we use these for testing, should implement
+        some type of security before release. Easiest
+        would be to use process.authkey
+        """
+        command = msg['command'].lower()
+        if(command == 'stop'):
+            self._loop.stop()
+            response = {'status': 'stopping'}
+        elif(command == 'remove'):
+            jobid = '?'
+            try:
+                jobid = msg['id']
+                response = {'id': jobid}
+                self._work_queue.remove_bylookup(jobid)
+                response['status'] = 'success'
+            except KeyError, exc:
+                logger.error('could not delete jobid %s: %s' % (jobid, exc))
+                response['status'] = 'notfound'
+        return response
+
+    def post_run(self):
+        self._socket.close()
+        self._context.term()
+
+
+class PipelineManager(BaseManager):
+
+    def __init__(self, pipeline, output_file, address="tcp://127.0.0.1", port=None):
+        self.expose.extend(['pipeline_path', 'pipeline_hash'])
+        self.pipeline = pipeline
+        self.pipeline_path = None
+        self.output_file = output_file
+        super(PipelineManager, self).__init__(address, port)
 
     def prepare_queue(self):
         if(self.pipeline_path is not None):
@@ -119,87 +270,6 @@ class Manager(threading.Thread):
         self.total_jobs = image_set_list.count()
         return self._work_queue
 
-    def _prepare_socket(self):
-        context = zmq.Context()
-        socket = context.socket(zmq.REP)
-        socket.setsockopt(zmq.LINGER, 100)
-        if(self.port is not None):
-            self.url = "%s:%s" % (self.address, int(self.port))
-            socket.bind(self.url)
-        else:
-            self.port = socket.bind_to_random_port(self.address)
-            self.url = "%s:%s" % (self.address, self.port)
-
-        self._context = context
-        self._socket = socket
-
-        return self.url
-
-    def _prepare_loop(self):
-        self._loop.add_handler(self._socket, self.gen_msg_handler, zmq.POLLIN)
-
-    def gen_msg_handler(self, socket, event):
-        raw_msg = socket.recv()
-        msg = parse_json(raw_msg)
-
-        response = {'status': 'bad request'}
-        if((msg is None) or ('type' not in msg)):
-            #TODO Log something
-            pass
-        elif(msg['type'] == 'next'):
-            response = self.get_next()
-        elif((msg['type'] == 'result') and ('result' in msg)):
-            response = self.report_result(msg)
-        elif((msg['type']) == 'command'):
-            response = self.receive_command(msg)
-        elif((msg['type']) == 'get'):
-            #General purpose way of querying simple information
-            keys = msg['keys']
-            for key in keys:
-                if(key in self.info):
-                    response[key] = self.info[key]
-                elif(key in self.expose):
-                    response[key] = getattr(self, key, 'notfound')
-                else:
-                    response[key] = 'notfound'
-                response['status'] = 'success'
-
-        self._socket.send(json.dumps(response))
-        if(self.num_remaining == 0):
-            self._loop.stop()
-
-    def run(self):
-        self.prepare_queue()
-        self._prepare_socket()
-        self.initialized.set()
-
-        self._prepare_loop()
-
-        #Blocking. Starts IO loop
-        self._loop.start()
-
-        self.post_run()
-
-    def running(self):
-        return self._loop.running()
-
-    @property
-    def num_remaining(self):
-        return len(self._work_queue)
-
-    def get_next(self):
-        try:
-            job = self._work_queue.get_next()
-        except IndexError:
-            job = None
-
-        if(job is None):
-            response = {'status': 'nowork'}
-        else:
-            response = job
-        response['num_remaining'] = self.num_remaining
-        return response
-
     def report_result(self, msg):
         id = msg['id']
         pipeline_hash = msg['pipeline_hash']
@@ -229,39 +299,10 @@ class Manager(threading.Thread):
             self.measurements.combine_measurements(curr_meas,
                                                    can_overwrite=True)
 
-            del self._work_queue[work_item_index]
-            self._jobs_finished += 1
+            self.job_finished(index=work_item_index)
             response = {'status': 'success',
                         'num_remaining': self.num_remaining}
         return response
-
-    def receive_command(self, msg):
-        """
-        Control commands from client to server.
-
-        For now we use these for testing, should implement
-        some type of security before release. Easiest
-        would be to use process.authkey
-        """
-        command = msg['command'].lower()
-        if(command == 'stop'):
-            self._loop.stop()
-            response = {'status': 'stopping'}
-        elif(command == 'remove'):
-            jobid = '?'
-            try:
-                jobid = msg['id']
-                response = {'id': jobid}
-                self._work_queue.remove_bylookup(jobid)
-                response['status'] = 'success'
-            except KeyError, exc:
-                logger.error('could not delete jobid %s: %s' % (jobid, exc))
-                response['status'] = 'notfound'
-        return response
-
-    def post_run(self):
-        self._socket.close()
-        self._context.term()
 
 class QueueDict(deque):
     """
@@ -282,7 +323,7 @@ class QueueDict(deque):
                     return index
             except KeyError:
                 pass
-        raise ValueError('%s not found for key %s' % (value, key))
+        raise KeyError('%s not found for key %s' % (value, key))
 
     def remove_bylookup(self, value, key='id'):
         index = self.lookup(value, key)
@@ -315,7 +356,6 @@ class JobTransit(object):
         return urllib2.urlopen(pipeline_path).read()
 
     def fetch_job(self):
-
         raw_msg = json.dumps({'type': 'next'})
         sent, resp = send_recv(self.context, self.url, raw_msg)
         if(not sent):

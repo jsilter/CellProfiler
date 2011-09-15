@@ -10,7 +10,7 @@ import logging
 
 import zmq
 
-from distributed import JobTransit, Manager
+from distributed import JobTransit, PipelineManager
 from cellprofiler.pipeline import Pipeline
 import cellprofiler.preferences as cpprefs
 
@@ -90,7 +90,7 @@ def run_multiple_workers(url, num_workers=None):
     return results
 
 def start_serving_headless(pipeline, output_file_path, address, port=None):
-    manager = Manager(pipeline, output_file_path, address, port)
+    manager = PipelineManager(pipeline, output_file_path, address, port)
     manager.start()
     manager.initialized.wait()
     #url = manager.url
