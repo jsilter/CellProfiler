@@ -8,7 +8,7 @@ import numpy as np
 
 from cellprofiler.modules.tests import example_images_directory
 from cellprofiler.pipeline import Pipeline
-from cellprofiler.distributed import JobTransit, JobInfo, Distributor
+from cellprofiler.distributed import JobTransit, JobInfo, Distributor, Manager
 from cellprofiler.distributed import  send_recv, parse_json
 import cellprofiler.preferences as cpprefs
 from cellprofiler.multiprocess import single_job, worker_looper, run_pipeline_headless
@@ -37,6 +37,9 @@ class TestDistributor(unittest.TestCase):
         self.pipeline.load(pipeline_path)
 
         self.distributor = Distributor(self.pipeline, self.output_file,
+                                       self.address, self.port)
+
+        self.manager = Manager(self.pipeline, self.output_file,
                                        self.address, self.port)
 
         #Might be better to write these paths into the pipeline
@@ -80,6 +83,13 @@ class TestDistributor(unittest.TestCase):
             url = '%s:%s' % (self.address, self.port)
         msg = json.dumps(stop_message)
         send_recv(self.context, url, msg)
+
+    def test_manager_start(self):
+        self.manager.start()
+        print 'back to main thread'
+        time.sleep(1.0)
+        self.assertTrue(self.manager.running())
+
 
     def test_start_serving(self):
         """
@@ -147,10 +157,10 @@ class TestDistributor(unittest.TestCase):
         """
 
         url = self._start_serving()
-        num_jobs = self.distributor.total_jobs
         self.assertTrue(self.distributor.server_proc.is_alive())
         fetcher = JobTransit(url, self.context)
 
+        num_jobs = self.distributor.total_jobs
         self.socket.connect(url)
 
         received = set()
@@ -246,9 +256,9 @@ def check_feature(feat_name):
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(TestDistributor('test_wound_healing'))
+    suite.addTest(TestDistributor('test_manager_start'))
     return suite
 
 if __name__ == "__main__":
-    unittest.main()
-    #unittest.TextTestRunner(verbosity=2).run(suite())
+    #unittest.main()
+    unittest.TextTestRunner(verbosity=2).run(suite())
