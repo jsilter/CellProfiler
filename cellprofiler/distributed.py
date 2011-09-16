@@ -66,7 +66,8 @@ class BaseManager(threading.Thread):
 
     def add_job(self, job, id=None):
         """
-        Add a job to the work queue
+        Add a job to the work queue. If no id is provided,
+        a uuid will be generated
         """
         to_add = job
         if(id is None):
@@ -87,7 +88,7 @@ class BaseManager(threading.Thread):
         success: boolean
             True if removed, False if not
         """
-        if(index is None):
+        if index is None:
             assert id is not None, "id cannot be none if index is None"
         try:
             index = self._work_queue.lookup(id)
@@ -106,26 +107,26 @@ class BaseManager(threading.Thread):
         if((msg is None) or ('type' not in msg)):
             #TODO Log something
             pass
-        elif(msg['type'] == 'next'):
+        elif msg['type'] == 'next':
             response = self.get_next()
         elif((msg['type'] == 'result') and ('result' in msg)):
             response = self.report_result(msg)
-        elif((msg['type']) == 'command'):
+        elif msg['type'] == 'command':
             response = self.receive_command(msg)
-        elif((msg['type']) == 'get'):
+        elif msg['type'] == 'get':
             #General purpose way of querying simple information
             keys = msg['keys']
             for key in keys:
-                if(key in self.info):
+                if key in self.info:
                     response[key] = self.info[key]
-                elif(key in self.expose):
+                elif key in self.expose:
                     response[key] = getattr(self, key, 'notfound')
                 else:
                     response[key] = 'notfound'
                 response['status'] = 'success'
 
         self._socket.send(json.dumps(response))
-        if(self.num_remaining == 0):
+        if self.num_remaining == 0:
             self._loop.stop()
 
     def run(self):
@@ -280,10 +281,10 @@ class PipelineManager(BaseManager):
             work_item = None
         #print work_item
         response = {'status': 'failure'}
-        if(work_item is None):
+        if work_item is None:
             resp = 'work item %s not found' % (id)
             response['code'] = resp
-        elif(pipeline_hash != work_item['pipeline_hash']):
+        elif pipeline_hash != work_item['pipeline_hash']:
             resp = "mismatched pipeline hash"
             response['code'] = resp
         else:
