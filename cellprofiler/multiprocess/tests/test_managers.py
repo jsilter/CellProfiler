@@ -8,12 +8,15 @@ import numpy as np
 
 from cellprofiler.modules.tests import example_images_directory
 from cellprofiler.pipeline import Pipeline
-from cellprofiler.distributed import JobTransit, JobInfo, PipelineManager
-from cellprofiler.distributed import  send_recv, parse_json
 import cellprofiler.preferences as cpprefs
-from cellprofiler.multiprocess import single_job, worker_looper, run_pipeline_headless
 import cellprofiler.measurements as cpmeas
-from test_Measurements import compare_measurements
+from cellprofiler.tests.test_Measurements import compare_measurements
+
+from cellprofiler.multiprocess.managers import PipelineManager, parse_json
+from cellprofiler.multiprocess.workers import  JobTransit, JobInfo, send_recv
+from cellprofiler.multiprocess.workers import single_job, worker_looper, run_pipeline_headless
+
+
 
 test_dir = os.path.dirname(os.path.abspath(__file__))
 test_data_dir = os.path.join(test_dir, 'data')

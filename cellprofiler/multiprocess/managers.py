@@ -1,11 +1,8 @@
-import time
 import os.path
-import StringIO
 import zlib
 import hashlib
 import tempfile
 import json
-import urllib2
 import base64
 import uuid
 
@@ -16,7 +13,6 @@ from collections import deque
 logger = logging.getLogger(__name__)
 
 import zmq
-from zmq import NotDone
 from zmq.eventloop import ioloop
 
 import cellprofiler.preferences as cpprefs
@@ -26,14 +22,18 @@ import cellprofiler.measurements as cpmeas
 
 #Whether CP should run distributed (changed by preferences or command line)
 force_run_distributed = False
+
+
 def run_distributed():
     return (force_run_distributed or cpprefs.get_run_distributed())
+
 
 class BaseManager(threading.Thread):
 
     #Member variables accessible to anybody who makes
     #a get request
     expose = ['num_remaining']
+
     def __init__(self, address="tcp://127.0.0.1", port=None, **kwargs):
         super(BaseManager, self).__init__(**kwargs)
         self.address = address
@@ -43,6 +43,7 @@ class BaseManager(threading.Thread):
         self.initialized = threading.Event()
         self.info = {}
         self.jobs_finished = 0
+        self.total_jobs = 0
 
     def prepare_queue(self):
         raise NotImplementedError("Must implement prepare_queue")
@@ -90,10 +91,10 @@ class BaseManager(threading.Thread):
         """
         if index is None:
             assert id is not None, "id cannot be none if index is None"
-        try:
-            index = self._work_queue.lookup(id)
-        except KeyError:
-            return False
+            try:
+                index = self._work_queue.lookup(id)
+            except KeyError:
+                return False
 
         del self._work_queue[index]
         self.jobs_finished += 1
@@ -263,9 +264,9 @@ class PipelineManager(BaseManager):
         # add jobs for each image set
         #XXX Maybe use guid instead of img_set_index?
         for img_set_index in range(image_set_list.count()):
-            job = {'id':img_set_index + 1,
-                   'pipeline_path':self.pipeline_path,
-                   'pipeline_hash':self.pipeline_hash}
+            job = {'id': img_set_index + 1,
+                   'pipeline_path': self.pipeline_path,
+                   'pipeline_hash': self.pipeline_hash}
             self._work_queue.append(job)
 
         self.total_jobs = image_set_list.count()
@@ -305,6 +306,7 @@ class PipelineManager(BaseManager):
                         'num_remaining': self.num_remaining}
         return response
 
+
 class QueueDict(deque):
     """
     Queue which provides for some dictionary-like access
@@ -313,7 +315,7 @@ class QueueDict(deque):
     def lookup(self, value, key='id'):
         """
         Search the list and return the index for which self[index][`key`] = value
-        
+
         Note that `key` is not required to exist in any (or all) elements, but
         performance will be worse if it does not.
         """
@@ -335,130 +337,11 @@ class QueueDict(deque):
         self.rotate(1)
         return value
 
-class JobTransit(object):
-    def __init__(self, url, context):
-        self.url = url
-        self.context = context
-
-    def _get_pipeline_blob(self):
-        msg = json.dumps({'type': 'get', 'keys':['pipeline_path']})
-        sent, raw_msg = send_recv(self.context, self.url, msg)
-
-        if(not raw_msg):
-            return None
-
-        msg = parse_json(raw_msg)
-        try:
-            pipeline_path = msg['pipeline_path']
-        except KeyError:
-            logger.error('path not found in response')
-            return None
-
-        return urllib2.urlopen(pipeline_path).read()
-
-    def fetch_job(self):
-        raw_msg = json.dumps({'type': 'next'})
-        sent, resp = send_recv(self.context, self.url, raw_msg)
-        if(not sent):
-            return None
-        msg = parse_json(resp)
-
-        if(not msg):
-            return None
-
-        if msg.get('status', '').lower() == 'nowork':
-            print "No work to be had."
-            return JobInfo(-1, -1, 'no_work', '', -1, False)
-
-        # fetch the pipeline
-        pipeline_blob = self._get_pipeline_blob()
-        pipeline_hash_local = hashlib.sha1(pipeline_blob).hexdigest()
-
-        try:
-            job_num = msg['id']
-            pipeline_hash_rem = msg['pipeline_hash']
-            image_num = int(job_num)
-            jobinfo = JobInfo(image_num, image_num,
-                              pipeline_blob, pipeline_hash_local, job_num)
-            jobinfo.num_remaining = msg['num_remaining']
-
-            jobinfo.is_valid = pipeline_hash_local == pipeline_hash_rem
-            if(not jobinfo.is_valid):
-                logger.info("Mismatched pipeline hash")
-            return jobinfo
-        except KeyError, exc:
-            logger.debug('KeyError: %s' % exc)
-            return None
-
-    def report_measurements(self, jobinfo, measurements):
-        meas_file = open(measurements.hdf5_dict.filename, 'r+b')
-        meas_str = meas_file.read()
-        send_str = base64.b64encode(meas_str)
-
-        msg = {'type': 'result', 'result': send_str}
-        msg.update(jobinfo.get_dict())
-        raw_msg = json.dumps(msg)
-
-        sent, resp = send_recv(self.context, self.url, raw_msg)
-        return parse_json(resp)
-
-class JobInfo(object):
-    def __init__(self, image_set_start, image_set_end,
-                 pipeline_blob, pipeline_hash, job_num, is_valid=True,
-                 num_remaining=None):
-        self.image_set_start = image_set_start
-        self.image_set_end = image_set_end
-        self.pipeline_blob = pipeline_blob
-        self.pipeline_hash = pipeline_hash
-        self.job_num = job_num
-        self.is_valid = is_valid
-        self.num_remaining = num_remaining
-
-    def get_dict(self):
-        return {'id': self.job_num,
-                'pipeline_hash': self.pipeline_hash}
-
-    def pipeline_stringio(self):
-        return StringIO.StringIO(zlib.decompress(self.pipeline_blob))
 
 def start_serving(manager, item1, item2):
     manager.start()
     return manager
 
-def send_recv(context, url, msg, timeout=5, protocol=zmq.REQ):
-    """
-    Send and recv a message.
-    
-    Parameters
-    ---------
-    context: zmq.context
-    url: string
-        url to connect to
-    msg: buffer
-        Message which will be sent with zmq.send
-    timeout: int,opt
-        Amount of time to wait for message to be sent (seconds).
-        Default is 5.
-    protocol: int,opt
-        zmq protocol. Default is zmq.REQ.
-    
-    Returns
-    ---------
-    sent : bool
-        True if message was successfully sent
-    response : response received, or None
-        response will be None if not sent
-    """
-    socket = context.socket(protocol)
-    socket.connect(url)
-    socket.setsockopt(zmq.LINGER, 0)
-    sent = send_with_timeout(socket, msg, timeout)
-    if(sent):
-        response = socket.recv()
-    else:
-        response = None
-    socket.close()
-    return sent, response
 
 def recv_with_timeout(socket, msg, timeout=5):
     """
@@ -467,13 +350,6 @@ def recv_with_timeout(socket, msg, timeout=5):
     """
     pass
 
-def send_with_timeout(socket, msg, timeout=5):
-    tracker = socket.send(msg, copy=False, track=True)
-    try:
-        tracker.wait(timeout)
-    except NotDone:
-        return False
-    return True
 
 def parse_json(raw_msg):
     try:
