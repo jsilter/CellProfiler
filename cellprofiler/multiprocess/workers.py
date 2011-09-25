@@ -105,7 +105,7 @@ def run_multiple_workers(url, num_workers=None):
     return results
 
 
-def start_serving_headless(pipeline, output_file_path, address, port):
+def start_serving_headless(pipeline, output_file_path, port, address):
     manager = PipelineManager(pipeline, output_file_path, port, address)
     manager.start()
     manager.initialized.wait()
@@ -114,11 +114,12 @@ def start_serving_headless(pipeline, output_file_path, address, port):
 
 
 def run_pipeline_headless(pipeline, output_file_path,
-                            address, port):
+                            port, address):
     manager = start_serving_headless(pipeline, output_file_path,
                                           port, address)
     num_jobs = manager.total_jobs
-    results = run_multiple_workers(manager.url, num_workers=num_jobs)
+    url = '%s:%s' % (address, manager.ports['jobs'])
+    results = run_multiple_workers(url, num_workers=num_jobs)
     return results
 
 
