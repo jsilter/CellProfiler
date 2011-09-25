@@ -17,14 +17,14 @@ from cellprofiler.multiprocess.workers import  JobTransit, JobInfo, send_recv
 from cellprofiler.multiprocess.workers import single_job, worker_looper, run_pipeline_headless
 
 
-
 test_dir = os.path.dirname(os.path.abspath(__file__))
 test_data_dir = os.path.join(test_dir, 'data')
 
 class TestManager(unittest.TestCase):
     def setUp(self):
-        #print 'starting test %s' % self.id()
+        print 'starting test %s' % self.id()
         self.address = "tcp://127.0.0.1"
+        #self.ports = {'jobs': None}
         self.port = None
 
         info = self.id().split('.')[-1]
@@ -40,10 +40,10 @@ class TestManager(unittest.TestCase):
         self.pipeline.load(pipeline_path)
 
         #self.distributor = Distributor(self.pipeline, self.output_file,
-                                       #self.address, self.port)
+                                       #self.port, self.address )
 
         self.manager = PipelineManager(self.pipeline, self.output_file,
-                                       self.address, self.port)
+                                       self.port, self.address)
 
         #Might be better to write these paths into the pipeline
         self.old_image_dir = cpprefs.get_default_image_directory()
@@ -73,12 +73,13 @@ class TestManager(unittest.TestCase):
                 proc.terminate()
 
         cpprefs.set_default_image_directory(self.old_image_dir)
-        #print 'finished test %s' % self.id()
+        print 'finished test %s' % self.id()
 
     def _start_serving(self, port=None):
         self.manager.start()
         self.manager.initialized.wait()
-        url = self.manager.url
+        port = self.manager.ports['jobs']
+        url = '%s:%s' % (self.address, port)
         return url
 
     def _stop_serving_clean(self, url=None):
@@ -90,11 +91,10 @@ class TestManager(unittest.TestCase):
         send_recv(self.context, url, msg)
 
     def test_manager_start(self):
-        self.manager.start()
+        url = self._start_serving()
         print 'back to main thread'
         time.sleep(1.0)
         self.assertTrue(self.manager.running())
-        url = self.manager.url
         self._stop_serving_clean(url)
         self.assertFalse(self.manager.running())
 
@@ -243,7 +243,7 @@ class TestManager(unittest.TestCase):
         pipeline = Pipeline()
         pipeline.load(pipeline_path)
 
-        results = run_pipeline_headless(pipeline, output_file_path, self.address, self.port)
+        results = run_pipeline_headless(pipeline, output_file_path, self.port, self.address)
         notdone = True
         while notdone:
             notdone = True
@@ -275,7 +275,7 @@ def MockManager(BaseManager):
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(TestManager('test_wound_healing'))
+    suite.addTest(TestManager('test_remove_work'))
     return suite
 
 if __name__ == "__main__":

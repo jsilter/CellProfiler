@@ -34,10 +34,10 @@ class BaseManager(threading.Thread):
     #a get request
     expose = ['num_remaining']
 
-    def __init__(self, address="tcp://127.0.0.1", port=None, **kwargs):
+    def __init__(self, ports, address="tcp://127.0.0.1", **kwargs):
         super(BaseManager, self).__init__(**kwargs)
         self.address = address
-        self.port = port
+        self.ports = ports
         self._work_queue = QueueDict()
         self._loop = ioloop.IOLoop()
         self.initialized = threading.Event()
@@ -47,23 +47,40 @@ class BaseManager(threading.Thread):
 
     def prepare_queue(self):
         raise NotImplementedError("Must implement prepare_queue")
+    
+    def get_socket(self, socket_type, port=None):
+        s = self._context.socket(socket_type)
+        if port is None:
+            p = s.bind_to_random_port(self.address)
+        else:
+            url = "%s:%s" % (self.address, int(port)) 
+            p = s.bind(url)
+        return s, p
+    
+    def prepare_sockets(self, context=None):
+        """
+        In progress, don't use yet
+        """
+        self._context = context or zmq.Context.instance()
+        self.gui_commands = self.get_socket(zmq.PULL, self.ports['gui_commands'])
+        self.gui_feedback = self.get_socket(zmq.PUSH, self.ports['gui_feedback'])
+        
+        self.jobs, jobs_port = self.get_socket(zmq.ROUTER)
+        self.results, results_port = self.get_socket(zmq.PULL)
+        self.control, control_port = self.get_socket(zmq.PUB)
+        self.exceptions, exceptions_port = self.get_socket(zmq.ROUTER)
 
     def prepare_loop(self, context=None):
         self._context = context or zmq.Context.instance()
-
-        socket = self._context.socket(zmq.REP)
-        socket.setsockopt(zmq.LINGER, 100)
-        if(self.port is not None):
-            self.url = "%s:%s" % (self.address, int(self.port))
-            socket.bind(self.url)
-        else:
-            self.port = socket.bind_to_random_port(self.address)
-            self.url = "%s:%s" % (self.address, self.port)
-
+        
+        port = self.ports['jobs']
+        socket, port = self.get_socket(zmq.REP, port) 
+        
+        self.ports['jobs'] = port
         self._socket = socket
         self._loop.add_handler(self._socket, self.gen_msg_handler, zmq.POLLIN)
 
-        return self.url
+        return self.ports
 
     def add_job(self, job, id=None):
         """
@@ -194,12 +211,12 @@ class BaseManager(threading.Thread):
 
 class PipelineManager(BaseManager):
 
-    def __init__(self, pipeline, output_file, address="tcp://127.0.0.1", port=None):
+    def __init__(self, pipeline, output_file, port=None, address="tcp://127.0.0.1",):
         self.expose.extend(['pipeline_path', 'pipeline_hash'])
         self.pipeline = pipeline
         self.pipeline_path = None
         self.output_file = output_file
-        super(PipelineManager, self).__init__(address, port)
+        super(PipelineManager, self).__init__({'jobs':port}, address)
 
     def prepare_queue(self):
         if(self.pipeline_path is not None):
