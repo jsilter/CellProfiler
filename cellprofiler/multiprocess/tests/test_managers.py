@@ -213,6 +213,15 @@ class TestManager(unittest.TestCase):
         for response in responses:
             self.assertEqual(response['status'], 'success')
         self.assertFalse(self.manager.running())
+        
+        ref_data_path = os.path.join(test_data_dir, 'ExampleWoundHealing_ref.h5')
+        output_file_path = os.path.join(test_data_dir, 'output', 'test_wound_healing.h5')
+
+        ref_meas = cpmeas.load_measurements(ref_data_path)
+        test_meas = cpmeas.load_measurements(output_file_path)
+
+        compare_measurements(ref_meas, test_meas, check_feature)
+        
 
     @np.testing.decorators.slow
     def test_report_measurements(self):
@@ -234,7 +243,7 @@ class TestManager(unittest.TestCase):
     def test_wound_healing(self):
         ex_dir = example_images_directory()
         pipeline_path = os.path.join(ex_dir, 'ExampleWoundHealingImages', 'ExampleWoundHealing.cp')
-        ref_data_path = os.path.join(test_data_dir, 'ExampleWoundHealingImages', 'ExampleWoundHealing_ref.h5')
+        ref_data_path = os.path.join(test_data_dir, 'ExampleWoundHealing_ref.h5')
         output_file_path = os.path.join(test_data_dir, 'output', 'test_wound_healing.h5')
 
         self.tst_pipeline_multi(pipeline_path, ref_data_path, output_file_path)
@@ -275,7 +284,7 @@ def MockManager(BaseManager):
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(TestManager('test_remove_work'))
+    suite.addTest(TestManager('test_wound_healing'))
     return suite
 
 if __name__ == "__main__":
