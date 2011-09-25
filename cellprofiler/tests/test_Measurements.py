@@ -26,6 +26,8 @@ from cStringIO import StringIO
 
 OBJECT_NAME = "myobjects"
 
+FLOAT_TYPES = [np.float,np.float32,np.float64]
+
 class TestMeasurements(unittest.TestCase):
     def test_00_00_init(self):
         x = cpmeas.Measurements()
@@ -698,16 +700,23 @@ def compare_measurements(ideal_meas_input, act_meas_input, check_feature=lambda 
             for img_num in image_numbers:
                 ideal_dat = ideal_meas.get_measurement(obj_name, feat_name, img_num)
                 act_dat = act_meas.get_measurement(obj_name, feat_name, img_num)
+                pot_err_msg = 'Data at %s.%s num %d not equal' % \
+                                        (obj_name, feat_name, img_num)
                 try:
-                    np.testing.assert_equal(act_dat, ideal_dat,
-                                        'Data at %s.%s num %d not equal' % \
-                                        (obj_name, feat_name, img_num),
-                                        verbose=True)
+                    is_float = type(act_dat) in FLOAT_TYPES
+                    if is_float:
+                        np.testing.assert_(type(ideal_dat) == type(act_dat))
+                        np.testing.assert_almost_equal(act_dat, ideal_dat, 
+                                    decimal=6,err_msg=pot_err_msg, verbose=True)
+                        continue
+                
+                    np.testing.assert_equal(act_dat, ideal_dat, 
+                                        err_msg=pot_err_msg, verbose=True)
                 except AssertionError, exc:
                     excs.append(exc)
     if(len(excs) > 0):
         print excs
-        raise excs[0]
+        raise excs[-1]
 
 if __name__ == "__main__":
     #sep_comb_suite = unittest.TestSuite()
