@@ -223,16 +223,20 @@ class PipelineManager(BaseManager):
             #Assume we have already prepared queue
             return
 
-        # duplicate pipeline
         pipeline = self.pipeline.copy()
 
-        # make sure createbatchfiles is not in the pipeline
-        exclude_mods = ['createbatchfiles', 'exporttospreadsheet']
+        # make sure no module is in the pipeline that
+        # can't be parallelized
+        exclude_mods = ['createbatchfiles', 'exporttospreadsheet','saveimages']
+        torem = []
         for ind, mod in enumerate(pipeline.modules()):
             if(mod.module_name.lower() in exclude_mods):
                 print '%s cannot be used in distributed mode, removing' \
                     % (mod.module_name)
-                pipeline.remove_module(ind + 1)
+                torem.append(ind)
+        torem = sorted(torem, reverse=True)
+        for ind in torem:
+            pipeline.remove_module(ind + 1)
 
         # create the image list
         image_set_list = cpi.ImageSetList()
