@@ -160,9 +160,26 @@ class Measurements(object):
 
         self.__is_first_image = True
         self.__initialized_explicitly = False
+        self._load_relationships()
+        
+    def _load_relationships(self):
+        """
+        If the backing HDF5Dict file has relationship
+        information, we load that into self.__relationships
+        """
+        
         self.__relationships = set()
         self.__relationship_names = set()
 
+        if RELATIONSHIP not in self.hdf5_dict.top_group:
+            return
+        
+        for relationship_group in self.hdf5_dict.top_group[RELATIONSHIP].values():
+            label = relationship_group.name.split('/')[-1]
+            module_number, group_number, relationship, object_name1, object_name2 = label.split('_')
+            self.__relationships.add((module_number, group_number, relationship, object_name1, object_name2))
+            self.__relationship_names.add(relationship_group.name)
+        
     def __del__(self):
         if hasattr(self, "hdf5_dict"):
             del self.hdf5_dict
@@ -591,7 +608,6 @@ class Measurements(object):
 
         assert isinstance(measurements, Measurements)
         obj_names = measurements.get_object_names()
-
 
         image_numbers = measurements.get_image_numbers()
         for obj_name in obj_names:

@@ -143,9 +143,13 @@ class HDF5Dict(object):
                 self.top_group.copy(object_group, self.top_group)
                 for feature_name in object_group.keys():
                     d = self.indices[object_name, feature_name] = {}
-                    hdf5_index = object_group[feature_name]['index']
-                    for num_idx, start, stop in hdf5_index:
-                        d[num_idx] = slice(start, stop)
+                    feature_group = object_group[feature_name]
+                    try:
+                        hdf5_index = feature_group['index']
+                        for num_idx, start, stop in hdf5_index:
+                            d[num_idx] = slice(start, stop)
+                    except KeyError:
+                        pass    
 
     def __check_valid_index(self, idxs):
         assert isinstance(idxs, tuple), "Accessing HDF5_Dict requires a tuple of (object_name, feature_name[, integer])"
