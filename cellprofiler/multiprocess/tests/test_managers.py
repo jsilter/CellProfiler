@@ -22,7 +22,7 @@ test_data_dir = os.path.join(test_dir, 'data')
 
 class TestManager(unittest.TestCase):
     def setUp(self):
-        print 'starting test %s' % self.id()
+        #print 'starting test %s' % self.id()
         self.address = "tcp://127.0.0.1"
         #self.ports = {'jobs': None}
         self.port = None
@@ -73,7 +73,7 @@ class TestManager(unittest.TestCase):
                 proc.terminate()
 
         cpprefs.set_default_image_directory(self.old_image_dir)
-        print 'finished test %s' % self.id()
+        #print 'finished test %s' % self.id()
 
     def _start_serving(self, port=None):
         self.manager.start()
@@ -237,7 +237,7 @@ class TestManager(unittest.TestCase):
         self.assertTrue('mismatched pipeline hash' in response['code'])
         self._stop_serving_clean(url)
 
-    @unittest.expectedFailure
+    #@unittest.expectedFailure
     @np.testing.decorators.slow
     @unittest.skip('lengthy test')
     def test_wound_healing(self):
@@ -247,10 +247,25 @@ class TestManager(unittest.TestCase):
         output_file_path = os.path.join(test_data_dir, 'output', 'test_wound_healing.h5')
 
         self.tst_pipeline_multi(pipeline_path, ref_data_path, output_file_path)
+        
+    @unittest.expectedFailure
+    @np.testing.decorators.slow
+    @unittest.skip('lengthy test')
+    def test_fly(self):
+        ex_dir = example_images_directory()
+        pipeline_path = os.path.join(ex_dir, 'ExampleFlyImages', 'ExampleFly.cp')
+        ref_data_path = os.path.join(test_data_dir, 'ExampleFly_ref.h5')
+        output_file_path = os.path.join(test_data_dir, 'output', 'test_fly.h5')
+        
+        self.tst_pipeline_multi(pipeline_path, ref_data_path, output_file_path)
+
 
     def tst_pipeline_multi(self, pipeline_path, ref_data_path, output_file_path):
         pipeline = Pipeline()
         pipeline.load(pipeline_path)
+        
+        img_dir = os.path.dirname(pipeline_path)
+        cpprefs.set_default_image_directory(img_dir)
 
         results = run_pipeline_headless(pipeline, output_file_path, self.port, self.address)
         notdone = True
@@ -284,7 +299,7 @@ def MockManager(BaseManager):
 
 def suite():
     suite = unittest.TestSuite()
-    suite.addTest(TestManager('test_wound_healing'))
+    suite.addTest(TestManager('test_fly'))
     return suite
 
 if __name__ == "__main__":
