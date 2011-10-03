@@ -27,6 +27,7 @@ from cStringIO import StringIO
 OBJECT_NAME = "myobjects"
 
 FLOAT_TYPES = [np.float, np.float32, np.float64]
+datadir = os.path.join(os.path.dirname(__file__),'data')
 
 
 class TestMeasurements(unittest.TestCase):
@@ -492,6 +493,23 @@ class TestMeasurements(unittest.TestCase):
             if m is not None:
                 del m
             os.unlink(name)
+            
+    def test_12_04_load_withrel(self):
+        finame = 'test_rel_01.h5'
+        path = os.path.join(datadir,finame)
+        meas = cpmeas.load_measurements(path)
+        self.assertIn(cpmeas.RELATIONSHIP, meas.hdf5_dict.top_group)
+        groups = meas.get_relationship_groups()
+        self.assertEquals(len(groups), 1)
+        group = groups[0]
+        expected_length = 114
+        temp = meas.get_relationships(
+                                group.module_number, group.relationship, group.object_name1,
+                                group.object_name2, group.group_number)
+        keys = ['group_index1','group_index2','object_number1','object_number2']
+        for key in keys:
+            data = temp[key]
+            self.assertEquals(len(data), expected_length)
 
     def test_13_01_load_matlab(self):
         data = ('eJztHEtzHEd5pCghVkhi3gmVQ5NylS2XJe3KWlueCpFkSbYV9CpLsRMss+nd'
