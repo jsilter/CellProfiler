@@ -26,7 +26,8 @@ from cStringIO import StringIO
 
 OBJECT_NAME = "myobjects"
 
-FLOAT_TYPES = [np.float,np.float32,np.float64]
+FLOAT_TYPES = [np.float, np.float32, np.float64]
+
 
 class TestMeasurements(unittest.TestCase):
     def test_00_00_init(self):
@@ -600,6 +601,15 @@ class TestMeasurements(unittest.TestCase):
         obj_names = [cpmeas.EXPERIMENT, cpmeas.IMAGE, cpmeas.OBJECT]
         feat_names = mknums('Feat', feat_nums)
 
+        modnum = 5
+        groupnum = 1
+        relname = 'relname'
+        object_name1 = 'objectname1'
+        object_name2 = 'objectname2'
+        rel_names = ['%02d_%d_%s_%s_%s' % (modnum, groupnum, relname, object_name1, object_name2)]
+        group_indices = np.ones(10)
+        obj_numbers = np.arange(0, 10) % max(obj_nums)
+
         r = np.random.RandomState()
         r.seed(3)
 
@@ -619,6 +629,10 @@ class TestMeasurements(unittest.TestCase):
                     ideal_comb.add_measurement(obj_name, feat_name, data,
                                                can_overwrite=False,
                                                image_set_number=img_num)
+
+                    ideal_comb.add_relate_measurement(modnum, relname, object_name1, object_name2,
+                                                      group_indices, group_indices, obj_numbers,
+                                                      obj_numbers, groupnum)
                     subsets = None
                     if img_num in img_nums_1:
                         subsets = [set1]
@@ -631,6 +645,9 @@ class TestMeasurements(unittest.TestCase):
                                                can_overwrite=False,
                                                image_set_number=img_num)
 
+                        subset.add_relate_measurement(modnum, relname, object_name1, object_name2,
+                                                      group_indices, group_indices, obj_numbers,
+                                                      obj_numbers, groupnum)
 
         #Combine subsets and compare to overall measurements set
         set1.combine_measurements(set2)
@@ -644,7 +661,6 @@ class TestMeasurements(unittest.TestCase):
         img_nums_1 = xrange(1, 5)
         img_nums_2 = xrange(5, 8)
         self.tst_combine(img_nums_1, img_nums_2)
-
 
     def test_14_02_combine(self):
         """
@@ -666,8 +682,8 @@ class TestMeasurements(unittest.TestCase):
 
 def compare_measurements(ideal_meas_input, act_meas_input, check_feature=lambda s: True):
     """
-    Compare 2 Measurement objects, assert all fields the same. 
-    
+    Compare 2 Measurement objects, assert all fields the same.
+
     Parameters
     -----------
     ideal_meas: Measurements, or string path to it
@@ -699,21 +715,42 @@ def compare_measurements(ideal_meas_input, act_meas_input, check_feature=lambda 
                 continue
             for img_num in image_numbers:
                 ideal_dat = ideal_meas.get_measurement(obj_name, feat_name, img_num)
-                act_dat = act_meas.get_measurement(obj_name, feat_name, img_num)
                 pot_err_msg = 'Data at %s.%s num %d not equal' % \
                                         (obj_name, feat_name, img_num)
                 try:
+                    act_dat = act_meas.get_measurement(obj_name, feat_name, img_num)
                     is_float = type(act_dat) in FLOAT_TYPES
                     if is_float:
                         np.testing.assert_(type(ideal_dat) == type(act_dat))
-                        np.testing.assert_almost_equal(act_dat, ideal_dat, 
-                                    decimal=6,err_msg=pot_err_msg, verbose=True)
+                        np.testing.assert_almost_equal(act_dat, ideal_dat,
+                                    decimal=6, err_msg=pot_err_msg, verbose=True)
                         continue
-                
-                    np.testing.assert_equal(act_dat, ideal_dat, 
+
+                    np.testing.assert_equal(act_dat, ideal_dat,
                                         err_msg=pot_err_msg, verbose=True)
                 except AssertionError, exc:
                     excs.append(exc)
+
+    groups = ideal_meas.get_relationship_groups()
+    keys = ['group_index1', 'group_index2', 'object_number1', 'object_number2']
+    for group in groups:
+        ideal_temp = act_meas.get_relationships(
+                                group.module_number, group.relationship, group.object_name1,
+                                group.object_name2, group.group_number)
+        try:
+            act_temp = act_meas.get_relationships(
+                                group.module_number, group.relationship, group.object_name1,
+                                group.object_name2, group.group_number)
+            for key in keys:
+                try:
+                    act_data = act_temp[key]
+                except ValueError:
+                    raise AssertionError('%s not found in measurement under test' % key)
+                np.testing.assert_equal(ideal_temp[key], act_data)
+
+        except AssertionError, exc:
+                    excs.append(exc)
+
     if(len(excs) > 0):
         print excs
         raise excs[-1]

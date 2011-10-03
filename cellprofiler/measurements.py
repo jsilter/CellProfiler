@@ -124,7 +124,7 @@ class Measurements(object):
         """Create a new measurements collection
 
         can_overwrite - DEPRECATED and has no effect
-        image_set_start - the index of the first image set in the 
+        image_set_start - the index of the first image set in the
             image set list or None to start at the beginning
         filename - store the measurement in an HDF5 file with this name
         copy - initialize by copying measurements from here, either an HDF5Dict
@@ -161,25 +161,26 @@ class Measurements(object):
         self.__is_first_image = True
         self.__initialized_explicitly = False
         self._load_relationships()
-        
+
     def _load_relationships(self):
         """
         If the backing HDF5Dict file has relationship
         information, we load that into self.__relationships
         """
-        
+
         self.__relationships = set()
         self.__relationship_names = set()
 
         if RELATIONSHIP not in self.hdf5_dict.top_group:
             return
-        
+
         for relationship_group in self.hdf5_dict.top_group[RELATIONSHIP].values():
             label = relationship_group.name.split('/')[-1]
             module_number, group_number, relationship, object_name1, object_name2 = label.split('_')
-            self.__relationships.add((module_number, group_number, relationship, object_name1, object_name2))
+            self.__relationships.add((int(module_number), int(group_number),
+                                      relationship, object_name1, object_name2))
             self.__relationship_names.add(relationship_group.name)
-        
+
     def __del__(self):
         if hasattr(self, "hdf5_dict"):
             del self.hdf5_dict
@@ -351,7 +352,8 @@ class Measurements(object):
         relationship,
         object_name1, object_name2,
         group_indexes1, object_numbers1,
-        group_indexes2, object_numbers2):
+        group_indexes2, object_numbers2,
+        group_number=None):
         '''Add object relationships to the measurements
 
         module_number - the module that generated the relationship
@@ -378,7 +380,8 @@ class Measurements(object):
 
         # XXX - check overwrite?
         # XXX - Should group number be moved out of the measurement name?
-        group_number = self.group_number
+        if group_number is None:
+            group_number = self.group_number
         with self.hdf5_dict.lock:
             self.hdf5_dict.top_group.require_group(RELATIONSHIP)
             relationship_group = self.hdf5_dict.top_group.require_group(
@@ -477,7 +480,7 @@ class Measurements(object):
 
     def remove_measurement(self, object_name, feature_name, image_number):
         '''Remove the measurement for the given image number
-        
+
         object_name - the measurement's object. If other than Image or Experiment,
                       will remove measurements for all objects
         feature_name - name of the measurement feature
@@ -488,7 +491,7 @@ class Measurements(object):
     def get_object_names(self):
         """The list of object names (including Image) that have measurements
         """
-        return self.hdf5_dict.top_level_names()
+        return [name for name in self.hdf5_dict.top_level_names() if name not in (RELATIONSHIP,)]
 
     object_names = property(get_object_names)
 
@@ -527,13 +530,13 @@ class Measurements(object):
 
     def get_measurement(self, object_name, feature_name, image_set_number=None):
         """Return the value for the named measurement and indicated image set
-        
+
         object_name - the name of one of the objects or one of the generic
                       names such as Image or Experiment
 
         feature_name - the name of the feature to retrieve
 
-        image_set_number - the current image set by default, a single 
+        image_set_number - the current image set by default, a single
                            image set number to get measurements for one
                            image set or a sequence of image numbers to
                            return measurements for each of the image sets
@@ -625,6 +628,16 @@ class Measurements(object):
                     self.add_measurement(obj_name, feat_name, dat,
                                          can_overwrite=can_overwrite,
                                          image_set_number=img_num)
+        groups = measurements.get_relationship_groups()
+        for group in groups:
+            temp = measurements.get_relationships(
+                                group.module_number, group.relationship, group.object_name1,
+                                group.object_name2, group.group_number)
+            self.add_relate_measurement(group.module_number, group.relationship,
+                                        group.object_name1, group.object_name2,
+                                        temp['group_index1'], temp['object_number1'],
+                                        temp['group_index2'], temp['object_number2'],
+                                        group.group_number)
 
     def get_experiment_measurement(self, feature_name):
         """Retrieve an experiment-wide measurement
@@ -702,20 +715,20 @@ class Measurements(object):
 
     def match_metadata(self, features, values):
         '''Match vectors of metadata values to existing measurements
-        
+
         This method finds the image sets that match each row in a vector
         of metadata values. Imagine being given an image set with metadata
         values of plate, well and site and annotations for each well
         with metadata values of plate and well and annotation. You'd like
         to match each annotation with all of the sites for it's well. This
         method will return the image numbers that match.
-        
+
         The method can also be used to match images, for instance when
         different illumination correction functions need to be matched
         against plates or sites.
-        
+
         features - the measurement names for the incoming metadata
-        
+
         values - a sequence of vectors, one per feature, giving the
                  metadata values to be matched.
 
@@ -841,19 +854,19 @@ class Measurements(object):
 def load_measurements(filename, dest_file=None, can_overwrite=False,
                       run_name=None):
     '''Load measurements from an HDF5 file
-    
+
     filename - path to file containing the measurements or file-like object
                if .mat
-    
+
     dest_file - path to file to be created. This file is used as the backing
                 store for the measurements.
-                
+
     can_overwrite - True to allow overwriting of existing measurements (not
                     supported any longer)
-                    
+
     run_name - name of the run (an HDF file can contain measurements
                from multiple runs). By default, takes the last.
-    
+
     returns a Measurements object
     '''
     HDF5_HEADER = (chr(137) + chr(72) + chr(68) + chr(70) + chr(13) + chr(10) +
@@ -983,8 +996,8 @@ def agg_ignore_feature(feature_name):
 class RelationshipKey:
     def __init__(self, module_number, group_number, relationship,
                  object_name1, object_name2):
-        self.module_number = module_number
-        self.group_number = group_number
+        self.module_number = int(module_number)
+        self.group_number = int(group_number)
         self.relationship = relationship
         self.object_name1 = object_name1
         self.object_name2 = object_name2
