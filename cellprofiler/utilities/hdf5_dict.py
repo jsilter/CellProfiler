@@ -177,7 +177,7 @@ class HDF5Dict(object):
 
         object_name, feature_name, num_idx = idxs
         feature_exists = self.has_feature(object_name, feature_name)
-        assert feature_exists
+        assert feature_exists, '%s.%s not found' % (object_name, feature_name)
         if not np.isscalar(num_idx):
             with self.lock:
                 indices = self.indices[(object_name, feature_name)]

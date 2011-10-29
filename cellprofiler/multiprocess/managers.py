@@ -242,15 +242,15 @@ class PipelineManager(BaseManager):
         image_set_list = cpi.ImageSetList()
         image_set_list.combine_path_and_file = True
         self.measurements = cpmeas.Measurements(filename=self.output_file)
-        workspace = cpw.Workspace(pipeline, None, None, None,
+        self.workspace = cpw.Workspace(pipeline, None, None, None,
                                   self.measurements, image_set_list)
 
-        if not pipeline.prepare_run(workspace):
+        if not pipeline.prepare_run(self.workspace):
             raise RuntimeError('Could not create image set list.')
 
         # call prepare_to_create_batch, for whatever preparation is necessary
         # hopefully none
-        #pipeline.prepare_to_create_batch(workspace, lambda s: s)
+        #pipeline.prepare_to_create_batch(self.workspace, lambda s: s)
 
         # add a CreateBatchFiles module at the end of the pipeline,
         # and set it up for saving the pipeline state
@@ -265,7 +265,7 @@ class PipelineManager(BaseManager):
         #TODO This is really not ideal
         #save and compress the pipeline
         #This saves the data directly on disk, uncompressed
-        raw_pipeline_path = module.save_pipeline(workspace)
+        raw_pipeline_path = module.save_pipeline(self.workspace)
         #Read it back into memory
         raw_pipeline_file = open(raw_pipeline_path, 'r')
         pipeline_txt = raw_pipeline_file.read()
@@ -327,7 +327,16 @@ class PipelineManager(BaseManager):
                         'num_remaining': self.num_remaining}
         return response
 
-
+    def post_run(self):
+        super(PipelineManager, self).post_run()
+        
+        #XXX This should probably be in a separate process
+        #Also it's redundant. What we should do is distribute
+        #the post run tasks, along with measurement data, to child
+        #workers, after run is over. 
+        self.pipeline.post_run(self.measurements, self.workspace.image_set_list, None)
+        #self.measurements.add_experiment_measurement(EXIT_STATUS,exit_status)
+        
 class QueueDict(deque):
     """
     Queue which provides for some dictionary-like access

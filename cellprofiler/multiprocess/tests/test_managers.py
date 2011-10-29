@@ -237,7 +237,6 @@ class TestManager(unittest.TestCase):
         self.assertTrue('mismatched pipeline hash' in response['code'])
         self._stop_serving_clean(url)
 
-    #@unittest.expectedFailure
     @np.testing.decorators.slow
     @unittest.skip('lengthy test')
     def test_wound_healing(self):
@@ -248,7 +247,6 @@ class TestManager(unittest.TestCase):
 
         self.tst_pipeline_multi(pipeline_path, ref_data_path, output_file_path)
         
-    @unittest.expectedFailure
     @np.testing.decorators.slow
     @unittest.skip('lengthy test')
     def test_fly(self):
@@ -281,7 +279,7 @@ class TestManager(unittest.TestCase):
 def check_feature(feat_name):
         fnl = feat_name.lower()
         ignore = ['executiontime', 'pathname', 'filename', 'pipeline_pipeline',
-                  'group_index']
+                  'group_index','saveimages']
         for igflag in ignore:
             if igflag in fnl:
                 return False

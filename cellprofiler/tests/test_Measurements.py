@@ -735,13 +735,13 @@ def compare_measurements(ideal_meas_input, act_meas_input, check_feature=lambda 
                 ideal_dat = ideal_meas.get_measurement(obj_name, feat_name, img_num)
                 pot_err_msg = 'Data at %s.%s num %d not equal' % \
                                         (obj_name, feat_name, img_num)
+                act_dat = act_meas.get_measurement(obj_name, feat_name, img_num)
                 try:
-                    act_dat = act_meas.get_measurement(obj_name, feat_name, img_num)
                     is_float = type(act_dat) in FLOAT_TYPES
                     if is_float:
-                        np.testing.assert_(type(ideal_dat) == type(act_dat))
+                        np.testing.assert_(type(ideal_dat) == type(act_dat),'Actual data is type %s, expected float' % type(act_dat))
                         np.testing.assert_almost_equal(act_dat, ideal_dat,
-                                    decimal=6, err_msg=pot_err_msg, verbose=True)
+                                    decimal=4, err_msg=pot_err_msg, verbose=True)
                         continue
 
                     np.testing.assert_equal(act_dat, ideal_dat,
@@ -764,10 +764,10 @@ def compare_measurements(ideal_meas_input, act_meas_input, check_feature=lambda 
                     act_data = act_temp[key]
                 except ValueError:
                     raise AssertionError('%s not found in measurement under test' % key)
-                np.testing.assert_equal(ideal_temp[key], act_data)
+                np.testing.assert_equal(ideal_temp[key], act_data, 'group relationship %s not equal' % key)
 
         except AssertionError, exc:
-                    excs.append(exc)
+            excs.append(exc)
 
     if(len(excs) > 0):
         print excs
