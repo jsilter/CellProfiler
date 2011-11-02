@@ -34,7 +34,7 @@ class BaseManager(threading.Thread):
     #a get request
     expose = ['num_remaining']
 
-    def __init__(self, ports, address="tcp://127.0.0.1", **kwargs):
+    def __init__(self, ports={}, address="tcp://127.0.0.1", **kwargs):
         super(BaseManager, self).__init__(**kwargs)
         self.address = address
         self.ports = ports
@@ -73,12 +73,19 @@ class BaseManager(threading.Thread):
     def prepare_loop(self, context=None):
         self._context = context or zmq.Context.instance()
         
-        port = self.ports['jobs']
-        socket, port = self.get_socket(zmq.REP, port) 
+        jobs_port = self.ports.get('jobs', None)
+        results_port = self.ports.get('results', None)
+        gui_commands_port = self.ports.get('gui_commands', None)
         
-        self.ports['jobs'] = port
-        self._socket = socket
-        self._loop.add_handler(self._socket, self.gen_msg_handler, zmq.POLLIN)
+        self.jobs, self.ports['jobs'] = self.get_socket(zmq.REP, jobs_port)
+        self.results, self.ports['results'] = self.get_socket(zmq.PULL, results_port)
+        self.gui_commands, self.ports['gui_commands'] = \
+            self.get_socket(zmq.PULL, gui_commands_port)
+        
+        #self._loop.add_handler(self.jobs, self.gen_msg_handler, zmq.POLLIN)
+        self._loop.add_handler(self.jobs, self.gen_get, zmq.POLLIN)
+        self._loop.add_handler(self.results, self.report_result, zmq.POLLIN)
+        self._loop.add_handler(self.gui_commands, self.receive_command, zmq.POLLIN)
 
         return self.ports
 
@@ -117,8 +124,11 @@ class BaseManager(threading.Thread):
         self.jobs_finished += 1
         return True
 
-    def gen_msg_handler(self, socket, event):
+    def gen_get(self, socket, event):
         raw_msg = socket.recv()
+        #print 'rcvmore: %s. message: %s' % (socket.getsockopt(zmq.RCVMORE), raw_msg)
+        #if socket.getsockopt(zmq.RCVMORE):
+            #return
         msg = parse_json(raw_msg)
 
         response = {'status': 'bad request'}
@@ -127,10 +137,10 @@ class BaseManager(threading.Thread):
             pass
         elif msg['type'] == 'next':
             response = self.get_next()
-        elif((msg['type'] == 'result') and ('result' in msg)):
-            response = self.report_result(msg)
-        elif msg['type'] == 'command':
-            response = self.receive_command(msg)
+        #elif((msg['type'] == 'result') and ('result' in msg)):
+            #response = self.report_result(msg)
+        #elif msg['type'] == 'command':
+            #response = self.receive_command(msg)
         elif msg['type'] == 'get':
             #General purpose way of querying simple information
             keys = msg['keys']
@@ -143,7 +153,7 @@ class BaseManager(threading.Thread):
                     response[key] = 'notfound'
                 response['status'] = 'success'
 
-        self._socket.send(json.dumps(response))
+        self.jobs.send(json.dumps(response))
         if self.num_remaining == 0:
             self._loop.stop()
 
@@ -163,7 +173,7 @@ class BaseManager(threading.Thread):
     @property
     def num_remaining(self):
         return len(self._work_queue)
-
+    
     def get_next(self):
         try:
             job = self._work_queue.get_next()
@@ -177,46 +187,60 @@ class BaseManager(threading.Thread):
         response['num_remaining'] = self.num_remaining
         return response
 
-    def report_result(self, msg):
-        raise NotImplementedError("Must implement report_result(self,msg)")
+    def get_next_handler(self, socket, event):
+        #Need to receive before we can send
+        msg = get_msg(socket)
+        response = self.get_next()
+        socket.send(json.dumps(response))
 
-    def receive_command(self, msg):
+    def report_result(self, socket, event):
+        raise NotImplementedError("Must implement report_result(self, socket, event)")
+
+    def receive_command(self, socket, event):
         """
-        Control commands from client to server.
+        Control commands to server.
 
         For now we use these for testing, should implement
         some type of security before release. Easiest
         would be to use process.authkey
         """
+        
+        msg = get_msg(socket)
+        if msg is None:
+            return
         command = msg['command'].lower()
         if(command == 'stop'):
             self._loop.stop()
-            response = {'status': 'stopping'}
+            #response = {'status': 'stopping'}
         elif(command == 'remove'):
             jobid = '?'
             try:
                 jobid = msg['id']
-                response = {'id': jobid}
+                #response = {'id': jobid}
                 self._work_queue.remove_bylookup(jobid)
-                response['status'] = 'success'
+                #response['status'] = 'success'
             except KeyError, exc:
                 logger.error('could not delete jobid %s: %s' % (jobid, exc))
-                response['status'] = 'notfound'
-        return response
+                #response['status'] = 'notfound'
+        #socket.send(json.dumps(response))
+        #return response
 
     def post_run(self):
-        self._socket.close()
+        self.jobs.close()
+        self.results.close()
+        self.gui_commands.close()
+        #self._loop.close() #In the docs but python claims it doesn't exist; newer version maybe?
         self._context.term()
 
 
 class PipelineManager(BaseManager):
 
-    def __init__(self, pipeline, output_file, port=None, address="tcp://127.0.0.1",):
+    def __init__(self, pipeline, output_file, ports={}, address="tcp://127.0.0.1",):
         self.expose.extend(['pipeline_path', 'pipeline_hash'])
         self.pipeline = pipeline
         self.pipeline_path = None
         self.output_file = output_file
-        super(PipelineManager, self).__init__({'jobs':port}, address)
+        super(PipelineManager, self).__init__(ports, address)
 
     def prepare_queue(self):
         if(self.pipeline_path is not None):
@@ -293,7 +317,8 @@ class PipelineManager(BaseManager):
         self.total_jobs = image_set_list.count()
         return self._work_queue
 
-    def report_result(self, msg):
+    def report_result(self, socket, event):
+        msg = get_msg(socket)
         id = msg['id']
         pipeline_hash = msg['pipeline_hash']
         try:
@@ -325,7 +350,9 @@ class PipelineManager(BaseManager):
             self.job_finished(index=work_item_index)
             response = {'status': 'success',
                         'num_remaining': self.num_remaining}
-        return response
+        
+        socket.send(json.dumps(response))
+        #return response
 
     def post_run(self):
         super(PipelineManager, self).post_run()
@@ -379,6 +406,11 @@ def recv_with_timeout(socket, msg, timeout=5):
     or if it's necessary.
     """
     pass
+
+
+def get_msg(socket):
+    raw_msg = socket.recv()
+    return parse_json(raw_msg)
 
 
 def parse_json(raw_msg):

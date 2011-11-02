@@ -33,7 +33,7 @@ def run_multiprocess():
     return (force_run_multiprocess or cpprefs.get_run_multiprocess())
 
 
-def worker_looper(url, context=None):
+def worker_looper(urls, context=None):
     """
     TODO: WRITE DOCSTRING
     NOTE: DO NOT PASS zmq.CONTEXT ACROSS PROCESSES.
@@ -45,15 +45,17 @@ def worker_looper(url, context=None):
     context_supplied = context is not None
     if(not context_supplied):
         context = zmq.Context()
-    transit = JobTransit(url, context)
+    transit = JobTransit(urls, context)
     while has_work:
         jobinfo = transit.fetch_job()
         if(jobinfo and jobinfo.is_valid):
             measurements = single_job(jobinfo)
-            response = transit.report_measurements(jobinfo, measurements)
-            responses.append(response)
-            num_remaining = response['num_remaining']
-            has_work = num_remaining > 0
+            sent = transit.report_measurements(jobinfo, measurements)
+            if not sent:
+                print 'error reporting results'
+            #responses.append(response)
+            #num_remaining = response['num_remaining']
+            #has_work = num_remaining > 0
         else:
             has_work = False
     if(not context_supplied):
@@ -77,7 +79,7 @@ def single_job(jobinfo):
         return measurements
 
 
-def run_multiple_workers(url, num_workers=None):
+def run_multiple_workers(urls, num_workers=None):
     """
     Run multiple local workers which will attempt to
     retrieve work from the provided URL.
@@ -95,28 +97,27 @@ def run_multiple_workers(url, num_workers=None):
 
     pool = multiprocessing.Pool(num_workers)
 
-    urls = [url] * num_workers
+    murls = [urls] * num_workers
     results = []
-    for url in urls:
-        result = pool.apply_async(worker_looper, args=(url,))
+    for urls in murls:
+        result = pool.apply_async(worker_looper, args=(urls,))
         results.append(result)
     #Note: The results will not be available immediately
     #because we haven't joined the pool
     return results
 
 
-def start_serving_headless(pipeline, output_file_path, port, address):
-    manager = PipelineManager(pipeline, output_file_path, port, address)
+def start_serving_headless(pipeline, output_file_path, ports, address):
+    manager = PipelineManager(pipeline, output_file_path, ports, address)
     manager.start()
     manager.initialized.wait()
-    #url = manager.url
     return manager
 
 
 def run_pipeline_headless(pipeline, output_file_path,
-                            port, address):
+                            ports, address):
     manager = start_serving_headless(pipeline, output_file_path,
-                                          port, address)
+                                          ports, address)
     num_jobs = manager.total_jobs
     url = '%s:%s' % (address, manager.ports['jobs'])
     results = run_multiple_workers(url, num_workers=num_jobs)
@@ -124,29 +125,30 @@ def run_pipeline_headless(pipeline, output_file_path,
 
 
 class JobTransit(object):
-    def __init__(self, url, context=None):
-        self.url = url
+    def __init__(self, urls, context=None):
+        self.jobs_url = urls['jobs']
+        self.results_url = urls['results']
         self.context = context or zmq.Context.instance()
 
-    def _get_pipeline_blob(self):
-        msg = json.dumps({'type': 'get', 'keys': ['pipeline_path']})
-        sent, raw_msg = send_recv(self.context, self.url, msg)
-
-        if(not raw_msg):
-            return None
-
-        msg = parse_json(raw_msg)
-        try:
-            pipeline_path = msg['pipeline_path']
-        except KeyError:
-            logger.error('path not found in response')
-            return None
+    def _get_pipeline_blob(self, pipeline_path):
+#        msg = json.dumps({'type': 'get', 'keys': ['pipeline_path']})
+#        sent, raw_msg = send_recv(self.context, self.jobs_url, msg)
+#
+#        if(not raw_msg):
+#            return None
+#
+#        msg = parse_json(raw_msg)
+#        try:
+#            pipeline_path = msg['pipeline_path']
+#        except KeyError:
+#            logger.error('path not found in response')
+#            return None
 
         return urllib2.urlopen(pipeline_path).read()
 
     def fetch_job(self):
         raw_msg = json.dumps({'type': 'next'})
-        sent, resp = send_recv(self.context, self.url, raw_msg)
+        sent, resp = send_recv(self.context, self.jobs_url, raw_msg)
         if(not sent):
             return None
         msg = parse_json(resp)
@@ -158,8 +160,13 @@ class JobTransit(object):
             print "No work to be had."
             return JobInfo(-1, -1, 'no_work', '', -1, False)
 
-        # fetch the pipeline
-        pipeline_blob = self._get_pipeline_blob()
+        try:
+            pipeline_path = msg['pipeline_path']
+        except KeyError:
+            print 'Pipeline path not in response'
+            return JobInfo(-1, -1, 'no_pipeline_path', -1, False)
+        
+        pipeline_blob = self._get_pipeline_blob(pipeline_path)
         pipeline_hash_local = hashlib.sha1(pipeline_blob).hexdigest()
 
         try:
@@ -186,9 +193,12 @@ class JobTransit(object):
         msg = {'type': 'result', 'result': send_str}
         msg.update(jobinfo.get_dict())
         raw_msg = json.dumps(msg)
+        
+        sent, socket = send_with_timeoutc(self.context, self.result_url, raw_msg,
+                                          protocol=zmq.PUSH)
+        socket.close()
 
-        sent, resp = send_recv(self.context, self.url, raw_msg)
-        return parse_json(resp)
+        return sent
 
 
 class JobInfo(object):
@@ -211,7 +221,7 @@ class JobInfo(object):
         return StringIO.StringIO(zlib.decompress(self.pipeline_blob))
 
 
-def send_recv(context, url, msg, timeout=5, protocol=zmq.REQ):
+def send_recv(context, url, msg, protocol=zmq.REQ, timeout=5):
     """
     Send and recv a message.
 
@@ -235,17 +245,20 @@ def send_recv(context, url, msg, timeout=5, protocol=zmq.REQ):
     response : response received, or None
         response will be None if not sent
     """
-    socket = context.socket(protocol)
-    socket.connect(url)
-    socket.setsockopt(zmq.LINGER, 0)
-    sent = send_with_timeout(socket, msg, timeout)
+    sent, socket = send_with_timeoutc(context, url, msg, protocol, timeout)
     if(sent):
+        #XXX Hangs when using ROUTER as response. Don't know why
         response = socket.recv()
     else:
         response = None
     socket.close()
     return sent, response
 
+def send_with_timeoutc(context, url, msg, protocol, timeout=5):
+    socket = context.socket(protocol)
+    socket.connect(url)
+    socket.setsockopt(zmq.LINGER, 0)
+    return send_with_timeout(socket, msg, timeout), socket
 
 def send_with_timeout(socket, msg, timeout=5):
     tracker = socket.send(msg, copy=False, track=True)
@@ -254,7 +267,6 @@ def send_with_timeout(socket, msg, timeout=5):
     except NotDone:
         return False
     return True
-
 
 if __name__ == '__main__':
     pass
